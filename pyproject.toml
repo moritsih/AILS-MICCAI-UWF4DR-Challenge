@@ -1,0 +1,32 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "ails_miccai_uwf4dr_challenge"
+version = "0.0.1"
+description = "As a part of the grand challenges published by MICCAI 2024, we tackle the UWF4DR challenge in the context of the AI in Life Science course at JKU Linz. The challenge addresses tseveral classification tasks related to ultra-wide field fundus images. Task1 is quality assessment, task2 is diabetic retinopathy classification, and task3 is classification of the presence of diabetic macular edema."
+authors = [
+  { name = "AILS-JKU-Team" },
+]
+
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    
+]
+requires-python = "~=3.10"
+
+[tool.black]
+line-length = 99
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.venv
+)/
+'''
+
+[tool.ruff.lint.isort]
+known_first_party = ["ails_miccai_uwf4dr_challenge"]
+force_sort_within_sections = true
