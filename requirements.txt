@@ -10,9 +10,11 @@ numpy
 pandas
 pip
 python-dotenv
+openpyxl
 scikit-learn
 tqdm
 torch
+torchvision
 opencv-python
 wandb
 monai
