@@ -1,0 +1,119 @@
+{
+    "os": "Linux-6.5.0-41-generic-x86_64-with-glibc2.35",
+    "python": "3.12.4",
+    "heartbeatAt": "2024-06-24T16:59:18.160264",
+    "startedAt": "2024-06-24T16:59:17.400862",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "<python with no main file>",
+    "codePathLocal": null,
+    "git": {
+        "remote": "https://github.com/moritsih/AILS-MICCAI-UWF4DR-Challenge.git",
+        "commit": "3270a38f814e09b3b920c88b17ac883c1f93b981"
+    },
+    "email": "pils.vera@gmail.com",
+    "root": "/home/vera/Documents/AI/AILS-MICCAI-UWF4DR-Challenge",
+    "host": "pils",
+    "username": "vera",
+    "executable": "/home/vera/miniconda3/envs/ails/bin/python",
+    "cpu_count": 12,
+    "cpu_count_logical": 16,
+    "cpu_freq": {
+        "current": 1778.0211874999998,
+        "min": 400.0,
+        "max": 4050.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 400.0,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 1727.382,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 448.255,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 464.511,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 1336.816,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 1485.374,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 2793.819,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 1513.303,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 2173.326,
+            "min": 400.0,
+            "max": 3400.0
+        },
+        {
+            "current": 2009.111,
+            "min": 400.0,
+            "max": 3400.0
+        },
+        {
+            "current": 1783.798,
+            "min": 400.0,
+            "max": 3400.0
+        },
+        {
+            "current": 2073.841,
+            "min": 400.0,
+            "max": 3400.0
+        },
+        {
+            "current": 400.0,
+            "min": 400.0,
+            "max": 3400.0
+        },
+        {
+            "current": 400.0,
+            "min": 400.0,
+            "max": 3400.0
+        },
+        {
+            "current": 407.756,
+            "min": 400.0,
+            "max": 3400.0
+        },
+        {
+            "current": 400.0,
+            "min": 400.0,
+            "max": 3400.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 464.3478088378906,
+            "used": 215.68164443969727
+        }
+    },
+    "memory": {
+        "total": 30.95120620727539
+    }
+}
