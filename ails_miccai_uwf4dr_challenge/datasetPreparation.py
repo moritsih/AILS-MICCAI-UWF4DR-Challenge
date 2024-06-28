@@ -3,6 +3,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import cv2
+from sklearn.model_selection import train_test_split
 
 from .config import PROJ_ROOT
 
@@ -169,7 +170,8 @@ class DeepDridDataset:
             return 5
 
 
-class GetDatasetsByTask:
+class DatasetBuilder:
+
     '''
     Args:
     dataset: str
@@ -181,7 +183,7 @@ class GetDatasetsByTask:
     Dataframe with the corresponding data
 
     Example:
-    dataset = GetDatasetsByTask(dataset='all', task='task1').get_data()
+    dataset = DatasetBuilder(dataset='all', task='task1')
     
     '''
 
@@ -230,7 +232,30 @@ class GetDatasetsByTask:
             raise ValueError('Invalid task name. Please enter a valid task name (task1, task2, or task3)')
         
 
-    def get_data(self):
+        self.train_data, self.val_data = self._split_data(self.data)
+
+        
+    def _split_data(self, data, split_ratio=0.8):
+        '''
+        Split the data into training and validation sets
+        '''
+        #stratify second column in df
+
+        train_data, val_data = train_test_split(data, test_size=1-split_ratio, random_state=42, stratify=data.iloc[:, 1])
+
+        return train_data, val_data
+    
+    def get_train_val(self):
+        '''
+        Returns the training and validation datasets
+        '''
+
+        return self.train_data, self.val_data
+
+    def get_unsplit_dataframe(self):
+        '''
+        Returns the entire dataset as a pandas dataframe without splitting into training and validation sets
+        '''
         return self.data
 
     def _concat_datasets(self, datasets: list):
@@ -238,13 +263,26 @@ class GetDatasetsByTask:
 
 
 
-class MakeDataset(Dataset):
+class CustomDataset(Dataset):
 
-    def __init__(self, dataset: str = 'all', task: str = 'full', transform=None):
+    '''
+    Use this class to create a custom dataset for PyTorch
+
+    Example:
+    dataset = DatasetBuilder(dataset='all', task='task1')
+    train_data, val_data = dataset.get_train_val()
+
+    train_dataset = CustomDataset(train_data, transform=transforms)
+    val_dataset = CustomDataset(val_data, transform=transforms)
+
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+    '''
+
+    def __init__(self, data, transform=None):
 
         self.transform = transform
-        self.data = GetDatasetsByTask(dataset=dataset, task=task).get_data()
-
+        self.data = data
     def __len__(self):
         return len(self.data)
 
@@ -254,7 +292,9 @@ class MakeDataset(Dataset):
         label = self.data.iloc[idx, 1]
 
         img = cv2.imread(str(img_path))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        # in the challenge description they say that they use BGR color for evaluation
+        #img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) # DO NOT USE THIS LINE, JUST FOR CLARIFICATION
 
         if self.transform:
             img = self.transform(img)
