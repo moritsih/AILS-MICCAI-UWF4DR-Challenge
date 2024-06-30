@@ -1,0 +1,1 @@
+https://github.com/rmaphoh/AutoMorph/tree/main/M1_Retinal_Image_quality_EyePACS/Retinal_quality/EyePACS_quality/efficientnet/7_seed_28
