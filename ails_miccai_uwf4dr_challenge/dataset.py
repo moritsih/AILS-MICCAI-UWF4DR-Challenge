@@ -320,7 +320,7 @@ def main():
 
     # example for how to use: run this file
 
-    dataset = DatasetBuilder(dataset='all', task='task1')
+    dataset = DatasetBuilder(dataset='original', task='task2')
     train_data, val_data = dataset.get_train_val()
 
     train_dataset = CustomDataset(train_data)

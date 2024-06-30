@@ -47,6 +47,7 @@ class Task1ResNet18(pl.LightningModule):
         with torch.no_grad():
             pred = torch.sigmoid(self(x))
         return pred
+    
 
     def training_step(self, batch, batch_idx):
 

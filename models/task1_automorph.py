@@ -15,6 +15,10 @@ class AutoMorphModel(L.LightningModule):
 
         # code taken from https://github.com/rmaphoh/AutoMorph/blob/main/M1_Retinal_Image_quality_EyePACS/model.py
         model = EfficientNet.from_pretrained('efficientnet-b4')
+
+        # freeze all layers
+        #model.freeze()
+
         model._fc = nn.Identity()
         net_fl = nn.Sequential(
                 nn.Linear(1792, 256),
@@ -126,6 +130,7 @@ class AutoMorphModel(L.LightningModule):
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer)
         return {"optimizer": optimizer, 
                 "lr_scheduler": {'scheduler': scheduler, 'monitor': 'val_loss'}}
+
 
 
 

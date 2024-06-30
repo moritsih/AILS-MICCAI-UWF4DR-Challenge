@@ -14,8 +14,6 @@ rotate_affine_flip_choice = v2.Compose([
                             #v2.RandomRotation(degrees=15, expand=True),
                             v2.RandomAffine(degrees=0, translate=(0.1, 0.1)),
                             v2.RandomChoice([
-                                # we have to think about this!!! DeepDRiD images get suuper zoomed in
-                                v2.RandomResizedCrop(size=(800, 1016), scale=(0.8, 1.0)),
                                 v2.Resize(size=(800, 1016)),
                             ])
                         ])
