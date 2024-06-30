@@ -1,9 +1,12 @@
 # Data
 /data/
+/downloads/
+/target/
+/tools/to_be_encrypted/
 
 # models downloaded
-models/AutoMorph/best_loss_checkpoint.pth
-models/example_submission/model_weights.pth
+models/AutoMorph/*.pth
+models/example_submission/*.pth
 
 # logs
 notebooks/wandb/

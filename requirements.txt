@@ -23,4 +23,6 @@ lightning
 nbautoexport
 seaborn
 typer
+gdown
+cryptography
 -e .
