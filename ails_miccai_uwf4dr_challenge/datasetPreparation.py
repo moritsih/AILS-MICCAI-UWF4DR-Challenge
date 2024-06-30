@@ -260,3 +260,12 @@ class MakeDataset(Dataset):
             img = self.transform(img)
 
         return img, label
+    
+    def get_all_images(self):
+        """ Load all images into a numpy array """
+        images = []
+        for idx in range(len(self.data)):
+            img_path = self.data.iloc[idx, 0]
+            img = cv2.imread(str(img_path))
+            images.append(img)
+        return np.array(images)
