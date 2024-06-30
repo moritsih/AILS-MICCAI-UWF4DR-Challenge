@@ -56,6 +56,8 @@ class AutoMorphModel(L.LightningModule):
         self.val_auroc = AUROC(task=task, num_classes=num_classes)
         self.test_auroc = AUROC(task=task, num_classes=num_classes)
 
+        
+        
     def forward(self, x):
         return self.model(x)
     
@@ -64,13 +66,11 @@ class AutoMorphModel(L.LightningModule):
             pred = torch.sigmoid(self(x))
         return pred
 
-
     def training_step(self, batch, batch_idx):
-
         x, y = batch
         y_hat = self(x)
 
-        loss = self.loss_fn(y_hat, y)
+        loss = self.loss_func(y_hat, y)
 
         acc = self.train_accuracy(y_hat, y)
         mcc = self.train_mcc(y_hat, y)
@@ -81,14 +81,11 @@ class AutoMorphModel(L.LightningModule):
 
         return loss
 
-
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
 
-        loss = self.loss_fn(y_hat, y)
-
-        loss = self.loss_fn(y_hat, y)
+        loss = self.loss_func(y_hat, y)
 
         acc = self.val_accuracy(y_hat, y)
         mcc = self.val_mcc(y_hat, y)
@@ -98,16 +95,23 @@ class AutoMorphModel(L.LightningModule):
         self.log('val_acc', acc.float())
         self.log('val_mcc', mcc.float())
         self.log('val_auroc', auroc.float())
-        
-        return loss
-    
+
+        return {'val_loss': loss, 'val_y': y, 'val_y_hat': y_hat}
+
+    def validation_epoch_end(self, outputs):
+        y_true = torch.cat([x['val_y'] for x in outputs]).cpu().numpy()
+        y_score = torch.cat([x['val_y_hat'] for x in outputs]).cpu().numpy()
+
+        metrics = self.classification_metrics(y_true, y_score)
+        self.log('val_auprc', metrics['auprc'])
+        self.log('val_sensitivity', metrics['sensitivity'])
+        self.log('val_specificity', metrics['specificity'])
 
     def test_step(self, batch, batch_idx):
-
         x, y = batch
         y_hat = self(x)
 
-        loss = self.loss_fn(y_hat, y)
+        loss = self.loss_func(y_hat, y)
 
         acc = self.test_accuracy(y_hat, y)
         mcc = self.test_mcc(y_hat, y)
@@ -117,9 +121,29 @@ class AutoMorphModel(L.LightningModule):
         self.log('test_acc', acc.float())
         self.log('test_mcc', mcc.float())
         self.log('test_auroc', auroc.float())
-        
-        return loss
-    
+
+        return {'test_loss': loss, 'test_y': y, 'test_y_hat': y_hat}
+
+    def test_epoch_end(self, outputs):
+        y_true = torch.cat([x['test_y'] for x in outputs]).cpu().numpy()
+        y_score = torch.cat([x['test_y_hat'] for x in outputs]).cpu().numpy()
+
+        metrics = self.classification_metrics(y_true, y_score)
+        self.log('test_auprc', metrics['auprc'])
+        self.log('test_sensitivity', metrics['sensitivity'])
+        self.log('test_specificity', metrics['specificity'])
+
+    def classification_metrics(self, y_true, y_score):
+        auroc = roc_auc_score(y_true, y_score)
+        auprc = average_precision_score(y_true, y_score)
+
+        fpr, tpr, thresholds = roc_curve(y_true, y_score)
+        best_threshold_index = np.argmax(tpr - fpr)
+
+        sensitivity = tpr[best_threshold_index]
+        specificity = 1 - fpr[best_threshold_index]
+
+        return dict(auroc=auroc, auprc=auprc, sensitivity=sensitivity, specificity=specificity)
 
     def configure_optimizers(self):
         optimizer = optim.AdamW(self.model.parameters(), lr=self.learning_rate)
