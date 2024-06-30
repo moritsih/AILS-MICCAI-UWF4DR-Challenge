@@ -22,4 +22,4 @@ lightning
 nbautoexport
 seaborn
 typer
--e .
+
