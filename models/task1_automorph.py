@@ -11,9 +11,10 @@ from torchmetrics import Accuracy, MatthewsCorrCoef, AUROC
 class AutoMorphModel(L.LightningModule):
     # https://github.com/lukemelas/EfficientNet-PyTorch
 
-    def __init__(self):
-
+    def __init__(self, learning_rate=1e-3):
         super(AutoMorphModel, self).__init__()
+
+        self.learning_rate = learning_rate
 
         # code taken from https://github.com/rmaphoh/AutoMorph/blob/main/M1_Retinal_Image_quality_EyePACS/model.py
         model = EfficientNet.from_pretrained('efficientnet-b4')
@@ -41,9 +42,7 @@ class AutoMorphModel(L.LightningModule):
 
         self.loss_func = nn.BCEWithLogitsLoss()
 
-
         # Metrics
-
         task = 'binary'
         num_classes = 2
 
@@ -58,7 +57,17 @@ class AutoMorphModel(L.LightningModule):
         self.val_auroc = AUROC(task=task, num_classes=num_classes)
         self.test_auroc = AUROC(task=task, num_classes=num_classes)
 
-        
+        # To store validation outputs
+        self.validation_outputs = []
+        self.test_outputs = []
+
+        # Initialize cumulative loss and batch count for training
+        self.train_cumulative_loss = 0.0
+        self.train_batch_count = 0
+
+        # Initialize cumulative loss and batch count for validation
+        self.val_cumulative_loss = 0.0
+        self.val_batch_count = 0
         
     def forward(self, x):
         return self.model(x)
@@ -77,11 +86,20 @@ class AutoMorphModel(L.LightningModule):
         acc = self.train_accuracy(y_hat, y)
         mcc = self.train_mcc(y_hat, y)
 
-        self.log('train_loss', loss.item())
-        self.log('train_acc', acc.float())
-        self.log('train_mcc', mcc.float())
+        return {'loss': loss, 'acc': acc, 'mcc': mcc}
 
-        return loss
+    def on_train_batch_end(self, outputs, batch, batch_idx):
+        # Update cumulative loss and batch count
+        self.train_cumulative_loss += outputs['loss'].item()
+        self.train_batch_count += 1
+
+        # Calculate average loss
+        avg_loss = self.train_cumulative_loss / self.train_batch_count
+
+        # Log average loss
+        self.log('train_loss', avg_loss, prog_bar=True)
+        self.log('train_acc', outputs['acc'].float())
+        self.log('train_mcc', outputs['mcc'].float())
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
@@ -93,21 +111,39 @@ class AutoMorphModel(L.LightningModule):
         mcc = self.val_mcc(y_hat, y)
         auroc = self.val_auroc(y_hat, y)
 
-        self.log('val_loss', loss.item())
-        self.log('val_acc', acc.float())
-        self.log('val_mcc', mcc.float())
-        self.log('val_auroc', auroc.float())
+        self.validation_outputs.append({'val_loss': loss, 'val_y': y, 'val_y_hat': y_hat})
 
-        return {'val_loss': loss, 'val_y': y, 'val_y_hat': y_hat}
+        return {'val_loss': loss, 'acc': acc, 'mcc': mcc, 'auroc': auroc}
 
-    def validation_epoch_end(self, outputs):
-        y_true = torch.cat([x['val_y'] for x in outputs]).cpu().numpy()
-        y_score = torch.cat([x['val_y_hat'] for x in outputs]).cpu().numpy()
+    def on_validation_batch_end(self, outputs, batch, batch_idx):
+        # Update cumulative loss and batch count
+        self.val_cumulative_loss += outputs['val_loss'].item()
+        self.val_batch_count += 1
+
+        # Calculate average loss
+        avg_val_loss = self.val_cumulative_loss / self.val_batch_count
+
+        # Log average loss
+        self.log('val_loss', avg_val_loss, prog_bar=True)
+        self.log('val_acc', outputs['acc'].float())
+        self.log('val_mcc', outputs['mcc'].float())
+        self.log('val_auroc', outputs['auroc'].float())
+
+    def on_validation_epoch_end(self):
+        y_true = torch.cat([x['val_y'] for x in self.validation_outputs]).cpu().numpy()
+        y_score = torch.cat([x['val_y_hat'] for x in self.validation_outputs]).cpu().numpy()
 
         metrics = self.classification_metrics(y_true, y_score)
         self.log('val_auprc', metrics['auprc'])
         self.log('val_sensitivity', metrics['sensitivity'])
         self.log('val_specificity', metrics['specificity'])
+        
+        # Clear outputs
+        self.validation_outputs.clear()
+
+        # Reset cumulative loss and batch count
+        self.val_cumulative_loss = 0.0
+        self.val_batch_count = 0
 
     def test_step(self, batch, batch_idx):
         x, y = batch
@@ -124,16 +160,19 @@ class AutoMorphModel(L.LightningModule):
         self.log('test_mcc', mcc.float())
         self.log('test_auroc', auroc.float())
 
-        return {'test_loss': loss, 'test_y': y, 'test_y_hat': y_hat}
+        self.test_outputs.append({'test_loss': loss, 'test_y': y, 'test_y_hat': y_hat})
 
-    def test_epoch_end(self, outputs):
-        y_true = torch.cat([x['test_y'] for x in outputs]).cpu().numpy()
-        y_score = torch.cat([x['test_y_hat'] for x in outputs]).cpu().numpy()
+    def on_test_epoch_end(self):
+        y_true = torch.cat([x['test_y'] for x in self.test_outputs]).cpu().numpy()
+        y_score = torch.cat([x['test_y_hat'] for x in self.test_outputs]).cpu().numpy()
 
         metrics = self.classification_metrics(y_true, y_score)
         self.log('test_auprc', metrics['auprc'])
         self.log('test_sensitivity', metrics['sensitivity'])
         self.log('test_specificity', metrics['specificity'])
+        
+        # Clear outputs
+        self.test_outputs.clear()
 
     def classification_metrics(self, y_true, y_score):
         auroc = roc_auc_score(y_true, y_score)

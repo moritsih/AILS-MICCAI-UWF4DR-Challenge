@@ -1,7 +1,6 @@
 # Data
 /data/
-/downloads/
-/target/
+/checkpoints/
 /tools/to_be_encrypted/
 
 # models downloaded
@@ -10,6 +9,7 @@ models/example_submission/*.pth
 
 # logs
 notebooks/wandb/
+lightning_logs/
 
 # Mac OS-specific storage files
 .DS_Store
