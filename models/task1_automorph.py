@@ -1,4 +1,6 @@
 from pathlib import Path
+import numpy as np
+from sklearn.metrics import average_precision_score, roc_auc_score, roc_curve
 import torch.nn as nn
 import torch.optim as optim
 import torch
@@ -27,7 +29,7 @@ class AutoMorphModel(L.LightningModule):
                 )
         model._fc = net_fl
 
-        checkpoint_path = Path().resolve() / "models" / "AutoMorph" / "best_loss_checkpoint.pth"
+        checkpoint_path = Path().resolve() / "models" / "AutoMorph" / "automorph_best_loss_checkpoint.pth"
         model.load_state_dict(torch.load(checkpoint_path, map_location=self.device))
 
         # add a final layer that outputs single value
@@ -158,6 +160,7 @@ checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
 model_name = Path(__file__).stem
 
+"""" TODO clarify with Moritz his lightnig version
 checkpoint_callback = L.callbacks.ModelCheckpoint(
     dirpath=checkpoint_dir,
     filename='{model_name}-{epoch}-{val_loss:.2f}-{val_acc:.2f}',
@@ -165,9 +168,7 @@ checkpoint_callback = L.callbacks.ModelCheckpoint(
     monitor='val_loss',
     mode='min' 
 )
-
-
-
+"""
 
 
 if __name__ == "__main__":
