@@ -11,7 +11,7 @@ As a part of the grand challenges published by MICCAI 2024, we tackle the UWF4DR
 Either execute the Makefile first, or set up the conda environment on your own (plain python) and execute
 
 ```
-./tools/install_reqirements.py
+./tools/install_requirements.py
 
 ```
 
