@@ -22,6 +22,13 @@ After that, download required data and model checkpoints with:
 
 ```
 
+For executing python files, you need to make sure that the working directory is part of your PYTHONPATH, so that modules can be resolved properly. You can generate a command to do this using this tool (or use any other option which works across platforms nicely, if you find one, please tell me):
+
+```
+./tools/generate_python_path_command.py
+
+```
+
 Happy coding!
 
 ## Project Organization
