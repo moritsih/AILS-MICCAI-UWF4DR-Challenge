@@ -24,7 +24,7 @@ class FileCategory:
 class FileDownloaderDecryptor:
     class FileCategoryEnum(Enum):
         DRID_DATA = FileCategory(
-            target_dir="data/raw",
+            target_dir="data/external",
             files=[
                 FileInfo(
                     url="https://drive.google.com/file/d/1jm48RSCctyxtEkppS45Znh0wtdf9patA/view?usp=drive_link",
@@ -52,7 +52,7 @@ class FileDownloaderDecryptor:
             ]
         )
 
-    def __init__(self, key_path="aes256.key", download_directory="downloads"):
+    def __init__(self, key_path="aes256.key", download_directory="data/downloads"):
         self.key_path = key_path
         self.download_directory = download_directory
         self.key = self.load_key()

@@ -25,4 +25,3 @@ seaborn
 typer
 gdown
 cryptography
--e .

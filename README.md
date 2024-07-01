@@ -6,6 +6,24 @@
 
 As a part of the grand challenges published by MICCAI 2024, we tackle the UWF4DR challenge in the context of the AI in Life Science course at JKU Linz. The challenge addresses several classification tasks related to ultra-wide field fundus images. Task1 is quality assessment, task2 is diabetic retinopathy classification, and task3 is classification of the presence of diabetic macular edema.
 
+## Bootstrap me!
+
+Either execute the Makefile first, or set up the conda environment on your own (plain python) and execute
+
+```
+./tools/install_reqirements.py
+
+```
+
+After that, download required data and model checkpoints with:
+
+```
+./tools/download_data_and_chkpts.py
+
+```
+
+Happy coding!
+
 ## Project Organization
 
 ```
@@ -38,6 +56,8 @@ As a part of the grand challenges published by MICCAI 2024, we tackle the UWF4DR
 │                         generated with `pip freeze > requirements.txt`
 │
 ├── setup.cfg          <- Configuration file for flake8
+|
+├── tools              <- tools for the data processing pipeline of the project
 │
 └── ails_miccai_uwf4dr_challenge                <- Source code for use in this project.
     │
@@ -57,6 +77,3 @@ As a part of the grand challenges published by MICCAI 2024, we tackle the UWF4DR
     └── visualization  <- Scripts to create exploratory and results oriented visualizations
         └── visualize.py
 ```
-
---------
-
