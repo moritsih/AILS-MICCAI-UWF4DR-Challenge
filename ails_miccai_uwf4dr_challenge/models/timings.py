@@ -8,6 +8,7 @@ class Timings(Enum):
     CALC_LOSS = "CALC_LOSS"
     BACKWARD_PASS = "BACKWARD_PASS"
     OPTIMIZER_STEP = "OPTIMIZER_STEP"
+    BATCH_PROCESSING = "BATCH_PROCESSING"
 
 class Timer:
     def __init__(self):

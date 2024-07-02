@@ -29,11 +29,18 @@ class DefaultBatchTrainingStrategy(BatchTrainingStrategy):
     def train_batch(self, model, inputs, labels, criterion, optimizer, device, timer):
         inputs, labels = inputs.to(device), labels.to(device)
         
-        optimizer.zero_grad()
-        outputs = model(inputs)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
+        with timer.time(Timings.FORWARD_PASS):
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            
+        with timer.time(Timings.CALC_LOSS):
+            loss = criterion(outputs, labels)
+            
+        with timer.time(Timings.BACKWARD_PASS):
+            loss.backward()
+            
+        with timer.time(Timings.OPTIMIZER_STEP):
+            optimizer.step()
         
         predicted = torch.sigmoid(outputs) > 0.5
         correct = predicted.eq(labels).sum().item()
@@ -90,19 +97,25 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
     def __init__(self, batch_strategy=None):
         self.batch_strategy = batch_strategy or DefaultBatchValidationStrategy()
 
-    def validate(self, model, val_loader, criterion, device):
+    def validate(self, model, val_loader, criterion, device, timer):
         model.eval()
         running_loss = 0.0
         correct = 0
         total = 0
+        avg_loss = inf
         with torch.no_grad():
-            for inputs, labels in tqdm(val_loader, desc='Validation'):
-                with torch.no_grad():
-                    loss, batch_correct = self.batch_strategy.validate_batch(model, inputs, labels, criterion, device)
+            with tqdm(val_loader) as pbar:
+                for inputs, labels in pbar:
+                    with torch.no_grad():
+                        loss, batch_correct = self.batch_strategy.validate_batch(model, inputs, labels, criterion, device)
 
-                running_loss += loss * inputs.size(0)
-                total += labels.size(0)
-                correct += batch_correct
+                    running_loss += loss * inputs.size(0)
+                    avg_loss = running_loss / (pbar.n + 1)
+                    
+                    total += labels.size(0)
+                    correct += batch_correct
+                    pbar.set_description(f"Avg val Loss: {avg_loss:.6f}, timer: {timer}")
+
 
         avg_loss = running_loss / total
         accuracy = correct / total
@@ -124,7 +137,7 @@ class Trainer:
     def train(self, num_epochs):
         for epoch in range(num_epochs):
             train_loss, train_acc = self.training_strategy.train(self.model, self.train_loader, self.criterion, self.optimizer, self.device, self.timer)
-            val_loss, val_acc = self.validation_strategy.validate(self.model, self.val_loader, self.criterion, self.device)
+            val_loss, val_acc = self.validation_strategy.validate(self.model, self.val_loader, self.criterion, self.device, self.timer)
 
             print(f'Epoch {epoch+1}/{num_epochs}')
             print(f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}')
