@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 
-from ails_miccai_uwf4dr_challenge.dataset import CustomDataset, DatasetBuilder
+from ails_miccai_uwf4dr_challenge.dataset import ChallengeTaskType, CustomDataset, DatasetBuilder, DatasetOriginationType
 from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice, resize_only
 from torch.utils.data import DataLoader
 
@@ -12,7 +12,7 @@ from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph_plain imp
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
 
 def main():
-    dataset = DatasetBuilder(dataset='all', task='task1')
+    dataset = DatasetBuilder(dataset=DatasetOriginationType.ALL, task=ChallengeTaskType.TASK1)
     train_data, val_data = dataset.get_train_val()
 
     train_dataset = CustomDataset(train_data, transform=rotate_affine_flip_choice)

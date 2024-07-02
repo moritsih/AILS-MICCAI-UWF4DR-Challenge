@@ -6,7 +6,7 @@ import typer
 
 from torch.utils.data import DataLoader
 from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice, resize_only
-from ails_miccai_uwf4dr_challenge.dataset import DatasetBuilder, CustomDataset
+from ails_miccai_uwf4dr_challenge.dataset import ChallengeTaskType, CustomDataset, DatasetBuilder, DatasetOriginationType
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph import AutoMorphModel
 
 app = typer.Typer()
@@ -33,7 +33,7 @@ def main():
 
     progress_bar = TQDMProgressBar(refresh_rate=10)
 
-    dataset_builder = DatasetBuilder(dataset='all', task='task1')
+    dataset_builder = DatasetBuilder(dataset=DatasetOriginationType.ALL, task=ChallengeTaskType.TASK1)
     train_data, val_data = dataset_builder.get_train_val()
 
     train_dataset = CustomDataset(train_data, transform=rotate_affine_flip_choice)

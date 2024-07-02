@@ -1,3 +1,4 @@
+import enum
 from pathlib import Path
 import typer
 from loguru import logger
@@ -172,70 +173,77 @@ class DeepDridDataset:
             return 0
         elif label in [1, 2, 3, 4]:
             return 1
-        else:
+        elif label == 5:
             return 5
+        else:            
+            raise ValueError("Invalid label in DeepDRiD dataset: {}".format(label))
+
+class DatasetOriginationType(enum):
+    ALL = 'all'
+    ORIGINAL = 'original'
+    DEEPDRID = 'deepdrid'
+    
+class ChallengeTaskType(enum):
+    FULL = 'full'
+    TASK1 = 'task1'
+    TASK2 = 'task2'
+    TASK3 = 'task3'
 
 
 class DatasetBuilder:
 
     '''
-    Args:
-    dataset: str
-        'all' (default), 'original', 'deepdrid'
-    task: str
-        'full' (default), 'task1', 'task2', 'task3'
-
     Returns:
     Dataframe with the corresponding data
 
     Example:
-    dataset = DatasetBuilder(dataset='all', task='task1')
+    dataset = DatasetBuilder(dataset=DatasetOriginationType.ALL, task=ChallengeTaskType.TASK1)
     
     '''
 
-    def __init__(self, dataset: str = 'all', task: str = 'full', split_ratio: float = 0.8):
+    def __init__(self, dataset: DatasetOriginationType = DatasetOriginationType.ALL, task: ChallengeTaskType = ChallengeTaskType.FULL, split_ratio: float = 0.8):
 
 
         ############################################
         # FILTER FOR DATASET
         ############################################
-        if dataset == 'all':
+        if dataset == DatasetOriginationType.ALL:
             self.original = OriginalDataset()
             self.deepdrid = DeepDridDataset()
             self.data = self._concat_datasets([self.original.get_data(), self.deepdrid.get_data()]) 
 
-        elif dataset == 'original':
+        elif dataset == DatasetOriginationType.ORIGINAL:
             self.data = OriginalDataset().get_data()
 
-        elif dataset == 'deepdrid':
+        elif dataset == DatasetOriginationType.DEEPDRID:
             self.data = DeepDridDataset().get_data()
 
         else:
-            raise ValueError('Invalid dataset name. Please enter a valid dataset name (original, deepdrid, or all)')
+            raise ValueError(f"Invalid dataset name: {dataset}")
         
 
         ############################################
         # FILTER FOR TASK
         ############################################
-        if task == 'full':
+        if task == ChallengeTaskType.FULL:
             pass # simply returns self.data once get_data is called
 
-        elif task in ['task1', '1', 'Task 1', 'Task1']:
+        elif task == ChallengeTaskType.TASK1:
             self.data = self.data.dropna(subset=['quality'])
             self.data = self.data.drop(columns=['dr', 'dme']).reset_index(drop=True)
 
-        elif task in ['task2', '2', 'Task 2', 'Task2']:
+        elif task == ChallengeTaskType.TASK2:
             # filter out rows with null values in the 'dr' column and drop 
             # the 'dme' column and the quality column
             self.data = self.data.dropna(subset=['dr'])
             self.data = self.data.drop(columns=['quality', 'dme']).reset_index(drop=True)
 
-        elif task in ['task3', '3', 'Task 3', 'Task3']:
+        elif task == ChallengeTaskType.TASK3:
             self.data = self.data.dropna(subset=['dme'])
             self.data = self.data.drop(columns=['quality', 'dr']).reset_index(drop=True)
 
         else:
-            raise ValueError('Invalid task name. Please enter a valid task name (task1, task2, or task3)')
+            raise ValueError(f'Invalid task name: {task} Please enter a valid task name.')
         
 
         self.train_data, self.val_data = self._split_data(self.data, split_ratio=split_ratio)
@@ -320,7 +328,7 @@ def main():
 
     # example for how to use: run this file
 
-    dataset = DatasetBuilder(dataset='all', task='task1')
+    dataset = DatasetBuilder(dataset=DatasetOriginationType.ALL, task=ChallengeTaskType.TASK1)
     train_data, val_data = dataset.get_train_val()
 
     train_dataset = CustomDataset(train_data)
