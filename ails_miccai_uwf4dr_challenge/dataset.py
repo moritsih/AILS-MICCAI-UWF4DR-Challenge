@@ -178,12 +178,12 @@ class DeepDridDataset:
         else:            
             raise ValueError("Invalid label in DeepDRiD dataset: {}".format(label))
 
-class DatasetOriginationType(enum):
+class DatasetOriginationType(enum.Enum):
     ALL = 'all'
     ORIGINAL = 'original'
     DEEPDRID = 'deepdrid'
     
-class ChallengeTaskType(enum):
+class ChallengeTaskType(enum.Enum):
     FULL = 'full'
     TASK1 = 'task1'
     TASK2 = 'task2'
