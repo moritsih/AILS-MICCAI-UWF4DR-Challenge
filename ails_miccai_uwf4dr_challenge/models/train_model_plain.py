@@ -8,7 +8,7 @@ from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice
 from torch.utils.data import DataLoader
 
 from ails_miccai_uwf4dr_challenge.models.trainer import Trainer
-from models.task1_automorph_plain import AutoMorphModel
+from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph_plain import AutoMorphModel
 
 def main():
     dataset = DatasetBuilder(dataset='all', task='task1')

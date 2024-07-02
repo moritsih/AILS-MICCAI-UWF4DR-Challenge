@@ -2,11 +2,12 @@ import os
 import lightning as L
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping, TQDMProgressBar
 import torch
-from models.task1_automorph import AutoMorphModel
+import typer
+
 from torch.utils.data import DataLoader
 from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice, resize_only
 from ails_miccai_uwf4dr_challenge.dataset import DatasetBuilder, CustomDataset
-import typer
+from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph import AutoMorphModel
 
 app = typer.Typer()
 

@@ -199,7 +199,7 @@ checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
 model_name = Path(__file__).stem
 
-"""" TODO clarify with Moritz his lightnig version
+"""" TODO clarify with Moritz his lightning version
 checkpoint_callback = L.callbacks.ModelCheckpoint(
     dirpath=checkpoint_dir,
     filename='{model_name}-{epoch}-{val_loss:.2f}-{val_acc:.2f}',
