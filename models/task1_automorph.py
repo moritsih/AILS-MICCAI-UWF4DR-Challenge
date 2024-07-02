@@ -215,4 +215,9 @@ if __name__ == "__main__":
     print(model)
 
     y_hat = model.predict(torch.randn(1, 3, 512, 512)).item()
+    
+    #print the parameters per model layer:
+    for name, param in model.named_parameters():
+        print(name, param.size())
+    
     print(y_hat)
