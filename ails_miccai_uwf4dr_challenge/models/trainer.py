@@ -1,11 +1,18 @@
+import enum
 from math import inf
 from abc import ABC, abstractmethod
 import torch
 from tqdm import tqdm
 from ails_miccai_uwf4dr_challenge.models.timings import Timings, Timer
 
+
+class NumBatches(enum.Enum):    
+    ALL=-1,
+    ONE_FOR_INITIAL_TESTING=1,
+    TWO_FOR_INITIAL_TESTING=2
+
 class TrainingContext:
-    def __init__(self, num_epochs: int, model, criterion, optimizer, device, timer : Timer):
+    def __init__(self, model, criterion, optimizer, device, timer : Timer, num_epochs: int, num_batches = NumBatches.ALL):
         assert model is not None
         assert criterion is not None
         assert optimizer is not None
@@ -16,9 +23,10 @@ class TrainingContext:
         self.criterion = criterion
         self.optimizer = optimizer
         self.device = device
-        self.timer = timer
-        self.current_epoch = 1
-        self.num_epochs = num_epochs
+        self.timer : Timer = timer
+        self.current_epoch : int = 1
+        self.num_epochs : int = num_epochs
+        self.num_batches : NumBatches = num_batches
         
     def get_epoch_info(self):
         return f"Epoch {self.current_epoch}/{self.num_epochs}"
@@ -89,7 +97,15 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
         avg_loss = inf
 
         with tqdm(train_loader) as pbar:
+            
+            pbar.set_description(f"{training_context.get_epoch_info()} - Starting training... ")
+            
             for inputs, labels in pbar:
+                
+                if training_context.num_batches != NumBatches.ALL and pbar.n >= training_context.num_batches:
+                    pbar.set_postfix_str(f"Training for {training_context.num_batches} batches only for initial testing")
+                    break
+                
                 with training_context.timer.time(Timings.DATA_LOADING):
                     inputs, labels = inputs.to(training_context.device), labels.to(training_context.device)
                 
@@ -107,8 +123,6 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
         avg_loss = running_loss / total
         accuracy = correct / total
 
-        training_context.timer.report()
-
         return avg_loss, accuracy
 
 class DefaultEpochValidationStrategy(EpochValidationStrategy):
@@ -123,7 +137,15 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
         avg_loss = inf
         with torch.no_grad():
             with tqdm(val_loader) as pbar:
+                
+                pbar.set_description(f"{training_context.get_epoch_info()} - Starting validation...")
+
                 for inputs, labels in pbar:
+                    
+                    if training_context.num_batches != NumBatches.ALL and pbar.n >= training_context.num_batches:
+                        pbar.set_postfix_str(f"Training for {training_context.num_batches} batches only for initial testing")
+                        break
+                    
                     with torch.no_grad():
                         loss, batch_correct = self.batch_strategy.validate_batch(training_context, inputs, labels)
 
@@ -150,15 +172,12 @@ class Trainer:
         self.training_strategy = training_strategy or DefaultEpochTrainingStrategy()
         self.validation_strategy = validation_strategy or DefaultEpochValidationStrategy()
 
-    def train(self, num_epochs):
+    def train(self, num_epochs, num_batches=NumBatches.ALL):
         
-        training_context = TrainingContext(num_epochs, self.model, self.criterion, self.optimizer, self.device, self.timer)
+        training_context = TrainingContext(self.model, self.criterion, self.optimizer, self.device, self.timer, num_epochs, num_batches)
         
         for epoch in range(num_epochs):
             training_context.current_epoch = epoch + 1
             train_loss, train_acc = self.training_strategy.train(training_context, self.train_loader)
             val_loss, val_acc = self.validation_strategy.validate(training_context, self.val_loader)
-
-            print(training_context.get_epoch_info())
-            print(f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}')
-            print(f'Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}')
+            print(training_context.get_epoch_info() + " Summary : " + f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}' + f' Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}')

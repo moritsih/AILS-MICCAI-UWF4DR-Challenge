@@ -36,6 +36,11 @@ def main():
         optimizer = optim.AdamW(model.parameters(), lr=1e-3)
         
         trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, device)
+        
+        print("First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
+        trainer.train(num_epochs=2, num_batches=2)
+        
+        print("Now train train train")
         trainer.train(num_epochs=100)
 
 if __name__ == "__main__":
