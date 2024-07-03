@@ -102,6 +102,8 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
             
             for inputs, labels in pbar:
                 
+                batch_size = self.getAssertedBatchSize(inputs, labels)
+                
                 if training_context.num_batches != NumBatches.ALL and pbar.n >= training_context.num_batches:
                     pbar.set_postfix_str(f"Training for {training_context.num_batches} batches only for initial testing")
                     break
@@ -112,10 +114,10 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
                 with training_context.timer.time(Timings.BATCH_PROCESSING):
                     loss, batch_correct = self.batch_strategy.train_batch(training_context, inputs, labels)
                 
-                running_loss += loss * inputs.size(0)
+                running_loss += loss * batch_size
                 avg_loss = running_loss / (pbar.n + 1)
 
-                total += labels.size(0)
+                total += batch_size
                 correct += batch_correct
 
                 pbar.set_description(f"{training_context.get_epoch_info()} - Avg train Loss: {avg_loss:.6f}, timer: {training_context.timer}")
@@ -124,6 +126,11 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
         accuracy = correct / total
 
         return avg_loss, accuracy
+
+    def getAssertedBatchSize(self, inputs, labels):
+        assert inputs.size(0) == labels.size(0), "Batch size mismatch between inputs and labels : {} != {}".format(inputs.size(0), labels.size(0))
+        batch_size = inputs.size(0)
+        return batch_size
 
 class DefaultEpochValidationStrategy(EpochValidationStrategy):
     def __init__(self, batch_strategy=None):
@@ -140,7 +147,8 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
                 
                 pbar.set_description(f"{training_context.get_epoch_info()} - Starting validation...")
 
-                for inputs, labels in pbar:
+                for inputs, labels in pbar:                    
+                    batch_size = self.getAssertedBatchSize(inputs, labels)
                     
                     if training_context.num_batches != NumBatches.ALL and pbar.n >= training_context.num_batches:
                         pbar.set_postfix_str(f"Training for {training_context.num_batches} batches only for initial testing")
@@ -149,16 +157,21 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
                     with torch.no_grad():
                         loss, batch_correct = self.batch_strategy.validate_batch(training_context, inputs, labels)
 
-                    running_loss += loss * inputs.size(0)
+                    running_loss += loss * batch_size
                     avg_loss = running_loss / (pbar.n + 1)
                     
-                    total += labels.size(0)
+                    total += batch_size
                     correct += batch_correct
                     pbar.set_description(f"{training_context.get_epoch_info()} - Avg val Loss: {avg_loss:.6f}, timer: {training_context.timer}")
 
         avg_loss = running_loss / total
         accuracy = correct / total
         return avg_loss, accuracy
+    
+    def getAssertedBatchSize(self, inputs, labels):
+        assert inputs.size(0) == labels.size(0), "Batch size mismatch between inputs and labels : {} != {}".format(inputs.size(0), labels.size(0))
+        batch_size = inputs.size(0)
+        return batch_size
 
 class Trainer:
     def __init__(self, model, train_loader, val_loader, criterion, optimizer, device, training_strategy: EpochTrainingStrategy = None, validation_strategy: EpochValidationStrategy = None):

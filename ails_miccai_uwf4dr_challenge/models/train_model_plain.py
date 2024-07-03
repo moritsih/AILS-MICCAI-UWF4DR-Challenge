@@ -7,7 +7,7 @@ from ails_miccai_uwf4dr_challenge.dataset import ChallengeTaskType, CustomDatase
 from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice, resize_only
 from torch.utils.data import DataLoader
 
-from ails_miccai_uwf4dr_challenge.models.trainer import Trainer
+from ails_miccai_uwf4dr_challenge.models.trainer import NumBatches, Trainer
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph_plain import AutoMorphModel
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
 
@@ -38,7 +38,7 @@ def main():
         trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, device)
         
         print("First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
-        trainer.train(num_epochs=2, num_batches=2)
+        trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
         
         print("Now train train train")
         trainer.train(num_epochs=100)
