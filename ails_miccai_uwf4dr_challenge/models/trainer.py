@@ -115,12 +115,13 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
                     loss, batch_correct = self.batch_strategy.train_batch(training_context, inputs, labels)
                 
                 running_loss += loss * batch_size
-                avg_loss = running_loss / (pbar.n + 1)
 
-                total += batch_size
+                total += batch_size #total processed samples so far
                 correct += batch_correct
 
-                pbar.set_description(f"{training_context.get_epoch_info()} - Avg train Loss: {avg_loss:.6f}, timer: {training_context.timer}")
+                avg_loss = running_loss / total
+
+                pbar.set_description(f"{training_context.get_epoch_info()} - Avg train Loss: {avg_loss:.6f}")
 
         avg_loss = running_loss / total
         accuracy = correct / total
@@ -157,12 +158,14 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
                     with torch.no_grad():
                         loss, batch_correct = self.batch_strategy.validate_batch(training_context, inputs, labels)
 
-                    running_loss += loss * batch_size
-                    avg_loss = running_loss / (pbar.n + 1)
+                    running_loss += loss * batch_size #because by default we use reduction='mean' in loss function
                     
-                    total += batch_size
+                    total += batch_size #total processed samples so far
                     correct += batch_correct
-                    pbar.set_description(f"{training_context.get_epoch_info()} - Avg val Loss: {avg_loss:.6f}, timer: {training_context.timer}")
+
+                    avg_loss = running_loss / total
+
+                    pbar.set_description(f"{training_context.get_epoch_info()} - Avg val Loss: {avg_loss:.6f}")
 
         avg_loss = running_loss / total
         accuracy = correct / total
