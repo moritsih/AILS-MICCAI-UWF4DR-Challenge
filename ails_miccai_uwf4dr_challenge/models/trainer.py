@@ -104,7 +104,7 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
                 
                 batch_size = self.getAssertedBatchSize(inputs, labels)
                 
-                if training_context.num_batches != NumBatches.ALL and pbar.n >= training_context.num_batches:
+                if training_context.num_batches != NumBatches.ALL and pbar.n >= training_context.num_batches.value:
                     pbar.set_postfix_str(f"Training for {training_context.num_batches} batches only for initial testing")
                     break
                 
@@ -150,7 +150,7 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
                 for inputs, labels in pbar:                    
                     batch_size = self.getAssertedBatchSize(inputs, labels)
                     
-                    if training_context.num_batches != NumBatches.ALL and pbar.n >= training_context.num_batches:
+                    if training_context.num_batches != NumBatches.ALL and pbar.n >= training_context.num_batches.value:
                         pbar.set_postfix_str(f"Training for {training_context.num_batches} batches only for initial testing")
                         break
                     
