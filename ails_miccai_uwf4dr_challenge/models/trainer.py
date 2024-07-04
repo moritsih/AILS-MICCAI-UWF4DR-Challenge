@@ -165,7 +165,7 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
 
                     avg_loss = running_loss / total
 
-                    pbar.set_description(f"{training_context.get_epoch_info()} - Avg val Loss: {avg_loss:.6f}")
+                    pbar.set_description(f"{training_context.get_epoch_info()} - Avg val Loss:  {avg_loss:.6f}") #extra space to align train/val values in print line
 
         avg_loss = running_loss / total
         accuracy = correct / total
