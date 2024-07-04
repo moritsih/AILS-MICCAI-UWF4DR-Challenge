@@ -4,7 +4,14 @@
     <img src="https://img.shields.io/badge/CCDS-Project%20template-328F97?logo=cookiecutter" />
 </a>
 
-As a part of the grand challenges published by MICCAI 2024, we tackle the UWF4DR challenge in the context of the AI in Life Science course at JKU Linz. The challenge addresses several classification tasks related to ultra-wide field fundus images. Task1 is quality assessment, task2 is diabetic retinopathy classification, and task3 is classification of the presence of diabetic macular edema.
+As a part of the grand challenges published by MICCAI 2024, we tackle the UWF4DR challenge in the context of the AI in 
+Life Science course at JKU Linz. The challenge addresses several classification tasks related to ultra-wide field fundus images. 
+
+* Task 1: Image quality assessment for ultra-widefield fundus (UWF) images
+* Task 2: Identification of referable diabetic retinopathy (RDR) 
+* Task 3: Identification of diabetic macular edema (DME)
+
+see [CodaLab Competition - MICCAI UWF4DR 2024](https://codalab.lisn.upsaclay.fr/competitions/18605) for more information.
 
 ## Bootstrap me!
 
