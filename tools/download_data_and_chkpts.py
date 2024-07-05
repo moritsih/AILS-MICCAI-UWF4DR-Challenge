@@ -56,7 +56,7 @@ class FileDownloaderDecryptor:
             files=[
                 FileInfo(
                     url="https://drive.google.com/file/d/1X5gekt4_BbIZLoj2fVMHwjWRRGWotzm1/view?usp=drive_link",
-                    filename="model.pth",
+                    filename="model_weights.pth",
                     uncompress=False
                 )
             ]
