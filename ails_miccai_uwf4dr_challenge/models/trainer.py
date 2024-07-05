@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 import torch
 from tqdm import tqdm
 from ails_miccai_uwf4dr_challenge.models.timings import Timings, Timer
+from ails_miccai_uwf4dr_challenge.models.metrics import BatchMetricsEvaluationStrategy, EpochMetricsEvaluationStrategy
 
 
 class NumBatches(enum.Enum):    
@@ -183,8 +184,9 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
         batch_size = inputs.size(0)
         return batch_size
 
+
 class Trainer:
-    def __init__(self, model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device = None, training_strategy: EpochTrainingStrategy = None, validation_strategy: EpochValidationStrategy = None):
+    def __init__(self, model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device = None, training_strategy: EpochTrainingStrategy = None, validation_strategy: EpochValidationStrategy = None, batch_metrics_strategy: BatchMetricsEvaluationStrategy = None, epoch_metrics_strategy: EpochMetricsEvaluationStrategy = None):
         assert model is not None
         self.model = model
         self.train_loader = train_loader
@@ -196,6 +198,9 @@ class Trainer:
         self.timer = Timer()
         self.training_strategy = training_strategy or DefaultEpochTrainingStrategy()
         self.validation_strategy = validation_strategy or DefaultEpochValidationStrategy()
+        self.batch_metrics_strategy = batch_metrics_strategy or BatchMetricsEvaluationStrategy([])
+        self.epoch_metrics_strategy = epoch_metrics_strategy or EpochMetricsEvaluationStrategy([])
+
 
     def train(self, num_epochs, num_batches=NumBatches.ALL):
 
@@ -210,6 +215,8 @@ class Trainer:
             train_loss, train_acc = self.training_strategy.train(training_context, self.train_loader)
             val_loss, val_acc = self.validation_strategy.validate(training_context, self.val_loader)
 
+            all_labels, all_outputs = self.collect_outputs(self.val_loader)
+            epoch_metrics = self.epoch_metrics_strategy.evaluate(all_labels, all_outputs)
             curr_lr = self.optimizer.param_groups[0]['lr']
 
             if isinstance(self.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):            
@@ -218,3 +225,16 @@ class Trainer:
                 self.lr_scheduler.step()
 
             print(training_context.get_epoch_info() + " Summary : " + f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}' + f' Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}, LR: {curr_lr:.2e}')
+            print("Epoch Metrics:", epoch_metrics)
+
+    def collect_outputs(self, data_loader):
+        all_labels = []
+        all_outputs = []
+        with torch.no_grad():
+            for inputs, labels in data_loader:
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
+                outputs = self.model(inputs)
+                all_labels.extend(labels.cpu().numpy())
+                all_outputs.extend(outputs.cpu().numpy())
+        return np.array(all_labels), np.array(all_outputs)
+

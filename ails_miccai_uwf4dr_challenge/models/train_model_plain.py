@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+from ails_miccai_uwf4dr_challenge.metrics import Metric, sensitivity_score, specificity_score
 
 from ails_miccai_uwf4dr_challenge.dataset import ChallengeTaskType, CustomDataset, DatasetBuilder, DatasetOriginationType
 from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice, resize_only
@@ -31,11 +32,22 @@ def main():
         model.to(device)
         
         print("Training model: ", model.__class__.__name__)    
+
+        metrics = [
+            Metric('auroc', roc_auc_score, {'evaluate_per_epoch': True}),
+            Metric('auprc', average_precision_score, {'evaluate_per_epoch': True}),
+            Metric('accuracy', lambda y_true, y_pred: (y_pred.round() == y_true).mean(), {'evaluate_per_epoch': True, 'evaluate_per_batch': True}),
+            Metric('sensitivity', sensitivity_score, {'evaluate_per_epoch': True}),
+            Metric('specificity', specificity_score, {'evaluate_per_epoch': True})
+        ]
+
+        batch_metrics_strategy = BatchMetricsEvaluationStrategy(metrics)
+        epoch_metrics_strategy = EpochMetricsEvaluationStrategy(metrics)
     
         criterion = nn.BCEWithLogitsLoss()
         optimizer = optim.AdamW(model.parameters(), lr=1e-3)
         lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
-        trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device)        
+        trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device, training_strategy, validation_strategy, batch_metrics_strategy, epoch_metrics_strategy)        
 
         print("First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
         trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
