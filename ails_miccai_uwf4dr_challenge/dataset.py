@@ -134,6 +134,8 @@ class DeepDridDataset:
         '''
 
         if int(row['dr']) == 5:
+            # bad image quality should be filtered out -> nan values are filtered in DatasetBuilder
+            row['dr'] = np.nan
             row['quality'] = 0
             return row
         elif int(row['dr']) in [0, 1, 2, 3, 4]:
@@ -199,6 +201,11 @@ class ChallengeTaskType(enum.Enum):
 class DatasetBuilder:
 
     '''
+    Args:
+    split_ratio: specifies the ratio of the dataset that should be used for training
+    get_mini_dataset: if True, a mini dataset is created using x % of the data (useful for debugging/trying out new methods)
+    frac: fraction of the data to use for the mini dataset
+
     Returns:
     Dataframe with the corresponding data
 
@@ -207,7 +214,7 @@ class DatasetBuilder:
     
     '''
 
-    def __init__(self, dataset: DatasetOriginationType = DatasetOriginationType.ALL, task: ChallengeTaskType = ChallengeTaskType.FULL, split_ratio: float = 0.8):
+    def __init__(self, dataset: DatasetOriginationType = DatasetOriginationType.ALL, task: ChallengeTaskType = ChallengeTaskType.FULL, split_ratio: float = 0.8, get_mini_dataset=False, frac=0.2):
 
 
         ############################################
@@ -251,8 +258,21 @@ class DatasetBuilder:
         else:
             raise ValueError(f'Invalid task name: {task} Please enter a valid task name.')
         
+        if get_mini_dataset:
+            self.data = self._sample_mini_dataset(self.data, frac=frac)
 
         self.train_data, self.val_data = self._split_data(self.data, split_ratio=split_ratio)
+
+    
+    def _sample_mini_dataset(self, data, frac):
+        
+        # circumventing issue with pandas groupby.apply
+        # need to copy the grouping column and then "include_groups=False" to suppress warning but get desired behavior
+        group_col = data.iloc[:, 1:].copy()
+        data['temp'] = group_col
+
+        # gets sample of 60% of all data and based on the proportions of the labels
+        return data.groupby('temp').apply(lambda x: x.sample(frac=frac, random_state=42), include_groups=False).reset_index(drop=True)
 
         
     def _split_data(self, data, split_ratio=0.8):
@@ -334,7 +354,7 @@ def main():
 
     # example for how to use: run this file
 
-    dataset = DatasetBuilder(dataset=DatasetOriginationType.ALL, task=ChallengeTaskType.TASK2)
+    dataset = DatasetBuilder(dataset=DatasetOriginationType.ALL, task=ChallengeTaskType.TASK1)
     train_data, val_data = dataset.get_train_val()
 
     train_dataset = CustomDataset(train_data)
