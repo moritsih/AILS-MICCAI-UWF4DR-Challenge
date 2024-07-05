@@ -51,6 +51,16 @@ class FileDownloaderDecryptor:
                 )
             ]
         )
+        INTERFERNCE_MODEL = FileCategory(
+            target_dir="models/submission_eval_model_weights",
+            files=[
+                FileInfo(
+                    url="https://drive.google.com/file/d/1X5gekt4_BbIZLoj2fVMHwjWRRGWotzm1/view?usp=drive_link",
+                    filename="model.pth",
+                    uncompress=False
+                )
+            ]
+        )
 
     def __init__(self, key_path="aes256.key", download_directory="data/downloads"):
         self.key_path = key_path
