@@ -11,7 +11,7 @@ if __name__=="__main__":
     sys.path.append(submission_program_dir)
 
     # Creating model
-    from model import model
+    from model_external import model
     network = model()
 
     # Loading model weights
