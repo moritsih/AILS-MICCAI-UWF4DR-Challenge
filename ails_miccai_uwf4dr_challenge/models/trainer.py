@@ -18,13 +18,19 @@ class TrainingContext:
         assert optimizer is not None
         assert timer is not None
         assert num_epochs > 0
+
+        #every trainer needs these (lr_scheduler is optional, because we might not use it, e.g. for initial testing)
         self.model = model
         self.criterion = criterion
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
+
+        #sometimes, we want to time the execution
         self.timer : Timer = timer
+        #epoch information
         self.current_epoch : int = 1
         self.num_epochs : int = num_epochs
+        #usually, we certainly want to execute all batches in an epoch, but for initial testing, we might want to limit the number of batches
         self.num_batches : NumBatches = num_batches
         
     def get_epoch_info(self):
@@ -193,7 +199,7 @@ class Trainer:
 
     def train(self, num_epochs, num_batches=NumBatches.ALL):
 
-        if self.device.type != next(self.model.parameters()).device.type or self.device.index != next(self.model.parameters()).device.index:
+        if self.device.type != next(self.model.parameters()).device.type:
             print(f"Moving model to device {self.device}, because it is different from the model's device {next(self.model.parameters()).device}")
             self.model.to(self.device)
         
@@ -211,4 +217,4 @@ class Trainer:
             elif self.lr_scheduler is not None:
                 self.lr_scheduler.step()
 
-            print(training_context.get_epoch_info() + " Summary : " + f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}' + f' Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}, LR: {curr_lr:.6f}')
+            print(training_context.get_epoch_info() + " Summary : " + f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}' + f' Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}, LR: {curr_lr:.2e}')

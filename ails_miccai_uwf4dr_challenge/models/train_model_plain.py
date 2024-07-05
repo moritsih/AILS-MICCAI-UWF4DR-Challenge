@@ -34,15 +34,14 @@ def main():
     
         criterion = nn.BCEWithLogitsLoss()
         optimizer = optim.AdamW(model.parameters(), lr=1e-3)
-        lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
-        
-        trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device)
-        
+        lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
+        trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device)        
+
         print("First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
         trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
         
         print("Now train train train")
-        trainer.train(num_epochs=100)
+        trainer.train(num_epochs=15)
 
 if __name__ == "__main__":
     main()
