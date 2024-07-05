@@ -109,9 +109,10 @@ class DeepDridDataset:
         # add a new column that reflects our knowledge about image quality
         data['quality'] = None
         data = data.apply(self._make_quality_labels, axis=1)
-
+       # print(data)
         # just to keep the same column names as the original dataset
         data['dme'] = np.ones_like(data['dr']) * -1
+
 
         self.data = data
 
@@ -133,11 +134,16 @@ class DeepDridDataset:
         '''
 
         if int(row['dr']) == 5:
+            # bad image quality should be filtered out -> nan values are filtered in DatasetBuilder
+            row['dr'] = np.nan
             row['quality'] = 0
+            return row
+        elif int(row['dr']) in [0, 1, 2, 3, 4]:
+            row['quality'] = 0
+            return row
         else:
-            row['quality'] = 1
+            raise ValueError(f"Invalid label in DeepDRiD dataset: {row['dr']}")
         
-        return row
 
 
     def _standardize_label_df(self, row):
@@ -151,6 +157,7 @@ class DeepDridDataset:
 
         #drop all other columns
         row = row[['image_path', 'dr']]
+
         return row
     
 
@@ -177,6 +184,7 @@ class DeepDridDataset:
             return 5
         else:            
             raise ValueError("Invalid label in DeepDRiD dataset: {}".format(label))
+        
 
 class DatasetOriginationType(enum.Enum):
     ALL = 'all'
@@ -193,6 +201,11 @@ class ChallengeTaskType(enum.Enum):
 class DatasetBuilder:
 
     '''
+    Args:
+    split_ratio: specifies the ratio of the dataset that should be used for training
+    get_mini_dataset: if True, a mini dataset is created using x % of the data (useful for debugging/trying out new methods)
+    frac: fraction of the data to use for the mini dataset
+
     Returns:
     Dataframe with the corresponding data
 
@@ -201,7 +214,7 @@ class DatasetBuilder:
     
     '''
 
-    def __init__(self, dataset: DatasetOriginationType = DatasetOriginationType.ALL, task: ChallengeTaskType = ChallengeTaskType.FULL, split_ratio: float = 0.8):
+    def __init__(self, dataset: DatasetOriginationType = DatasetOriginationType.ALL, task: ChallengeTaskType = ChallengeTaskType.FULL, split_ratio: float = 0.8, get_mini_dataset=False, frac=0.2):
 
 
         ############################################
@@ -245,8 +258,21 @@ class DatasetBuilder:
         else:
             raise ValueError(f'Invalid task name: {task} Please enter a valid task name.')
         
+        if get_mini_dataset:
+            self.data = self._sample_mini_dataset(self.data, frac=frac)
 
         self.train_data, self.val_data = self._split_data(self.data, split_ratio=split_ratio)
+
+    
+    def _sample_mini_dataset(self, data, frac):
+        
+        # circumventing issue with pandas groupby.apply
+        # need to copy the grouping column and then "include_groups=False" to suppress warning but get desired behavior
+        group_col = data.iloc[:, 1:].copy()
+        data['temp'] = group_col
+
+        # gets sample of 60% of all data and based on the proportions of the labels
+        return data.groupby('temp').apply(lambda x: x.sample(frac=frac, random_state=42), include_groups=False).reset_index(drop=True)
 
         
     def _split_data(self, data, split_ratio=0.8):
