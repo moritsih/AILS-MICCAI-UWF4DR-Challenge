@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from sklearn.metrics import roc_auc_score, average_precision_score
 
 from ails_miccai_uwf4dr_challenge.metrics import Metric, sensitivity_score, specificity_score
 
@@ -34,14 +35,14 @@ def main():
         print("Training model: ", model.__class__.__name__)    
 
         metrics = [
-            Metric('auroc', roc_auc_score, {'evaluate_per_epoch': True}),
-            Metric('auprc', average_precision_score, {'evaluate_per_epoch': True}),
-            Metric('accuracy', lambda y_true, y_pred: (y_pred.round() == y_true).mean(), {'evaluate_per_epoch': True, 'evaluate_per_batch': True}),
-            Metric('sensitivity', sensitivity_score, {'evaluate_per_epoch': True}),
-            Metric('specificity', specificity_score, {'evaluate_per_epoch': True})
-        ]
+            Metric('auroc', roc_auc_score, MetricsMetaInfo(evaluate_per_epoch=True, evaluate_per_batch=False)),
+            Metric('auprc', average_precision_score, MetricsMetaInfo(evaluate_per_epoch=True, evaluate_per_batch=False)),
+            Metric('accuracy', lambda y_true, y_pred: (y_pred.round() == y_true).mean(), MetricsMetaInfo(evaluate_per_epoch=True, evaluate_per_batch=True)),
+            Metric('sensitivity', sensitivity_score, MetricsMetaInfo(evaluate_per_epoch=True, evaluate_per_batch=False)),
+            Metric('specificity', specificity_score, MetricsMetaInfo(evaluate_per_epoch=True, evaluate_per_batch=False)),
+]
 
-        batch_metrics_strategy = BatchMetricsEvaluationStrategy(metrics)
+        #batch_metrics_strategy = BatchMetricsEvaluationStrategy(metrics)
         epoch_metrics_strategy = EpochMetricsEvaluationStrategy(metrics)
     
         criterion = nn.BCEWithLogitsLoss()

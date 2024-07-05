@@ -1,10 +1,16 @@
 from typing import Callable, List
 
 class Metric:
-    def __init__(self, name: str, function: Callable, meta_info: dict):
+    def __init__(self, name: str, function: Callable, meta_info: MetricsMetaInfo):
         self.name = name
         self.function = function
-        self.meta_info = meta_info
+        self.meta_info: MetricsMetaInfo = meta_info
+
+class MetricsMetaInfo:
+    def __init__(self, evaluate_per_epoch: bool, evaluate_per_batch: bool):
+        self.evaluate_per_epoch = evaluate_per_epoch
+        self.evaluate_per_batch = evaluate_per_batch
+
 
 class MetricsEvaluationStrategy(ABC):
     def __init__(self, metrics: List[Metric]):
@@ -14,19 +20,19 @@ class MetricsEvaluationStrategy(ABC):
     def evaluate(self, y_true, y_pred):
         pass
 
-class BatchMetricsEvaluationStrategy(MetricsEvaluationStrategy):
+""" class BatchMetricsEvaluationStrategy(MetricsEvaluationStrategy):
     def evaluate(self, y_true, y_pred):
         results = {}
         for metric in self.metrics:
             if metric.meta_info.get('evaluate_per_batch', False):
                 results[metric.name] = metric.function(y_true, y_pred)
         return results
-
+ """
 class EpochMetricsEvaluationStrategy(MetricsEvaluationStrategy):
     def evaluate(self, y_true, y_pred):
         results = {}
         for metric in self.metrics:
-            if metric.meta_info.get('evaluate_per_epoch', False):
+            if metric.meta_info.evaluate_per_epoch:
                 results[metric.name] = metric.function(y_true, y_pred)
         return results
 
