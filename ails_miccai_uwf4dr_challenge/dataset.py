@@ -109,9 +109,10 @@ class DeepDridDataset:
         # add a new column that reflects our knowledge about image quality
         data['quality'] = None
         data = data.apply(self._make_quality_labels, axis=1)
-
+       # print(data)
         # just to keep the same column names as the original dataset
         data['dme'] = np.ones_like(data['dr']) * -1
+
 
         self.data = data
 
@@ -134,10 +135,13 @@ class DeepDridDataset:
 
         if int(row['dr']) == 5:
             row['quality'] = 0
+            return row
+        elif int(row['dr']) in [0, 1, 2, 3, 4]:
+            row['quality'] = 0
+            return row
         else:
-            row['quality'] = 1
+            raise ValueError(f"Invalid label in DeepDRiD dataset: {row['dr']}")
         
-        return row
 
 
     def _standardize_label_df(self, row):
@@ -151,6 +155,7 @@ class DeepDridDataset:
 
         #drop all other columns
         row = row[['image_path', 'dr']]
+
         return row
     
 
@@ -177,6 +182,7 @@ class DeepDridDataset:
             return 5
         else:            
             raise ValueError("Invalid label in DeepDRiD dataset: {}".format(label))
+        
 
 class DatasetOriginationType(enum.Enum):
     ALL = 'all'
@@ -328,7 +334,7 @@ def main():
 
     # example for how to use: run this file
 
-    dataset = DatasetBuilder(dataset=DatasetOriginationType.ALL, task=ChallengeTaskType.TASK1)
+    dataset = DatasetBuilder(dataset=DatasetOriginationType.ALL, task=ChallengeTaskType.TASK2)
     train_data, val_data = dataset.get_train_val()
 
     train_dataset = CustomDataset(train_data)
