@@ -9,7 +9,7 @@ from enum import Enum
 import time
 from contextlib import contextmanager
 
-from ails_miccai_uwf4dr_challenge.models.metrics import Metric, MetricsMetaInfo, MetricsEvaluationStrategy, BatchMetricsEvaluationStrategy, EpochMetricsEvaluationStrategy
+from ails_miccai_uwf4dr_challenge.models.metrics import Metric, MetricsMetaInfo, MetricsEvaluationStrategy, EpochMetricsEvaluationStrategy
 
 class Timings(Enum):
     DATA_LOADING = "DATA_LOADING"
@@ -327,9 +327,6 @@ class Trainer:
 
         if epoch_metrics_strategy is not None:
             self.add_epoch_end_hook(EpochMetricsEndHook(self.epoch_metrics_strategy))
-
-
-
 
     def add_epoch_end_hook(self, hook: EpochEndHook):
         self.epoch_end_hooks.append(hook)
