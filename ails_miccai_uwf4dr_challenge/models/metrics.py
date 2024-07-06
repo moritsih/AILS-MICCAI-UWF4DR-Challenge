@@ -29,6 +29,7 @@ class EpochMetricsEvaluationStrategy(MetricsEvaluationStrategy):
         for metric in self.metrics:
             if metric.meta_info.evaluate_per_epoch:
                 results[metric.name] = metric.function(y_true, y_pred)
+                wandb.log({metric.name: results[metric.name]})
         return results
 
 def sensitivity_score(y_true, y_pred):

@@ -1,0 +1,28 @@
+2024-07-06 13:19:20,817 INFO    MainThread:12989 [wandb_setup.py:_flush():76] Current SDK version is 0.17.2
+2024-07-06 13:19:20,817 INFO    MainThread:12989 [wandb_setup.py:_flush():76] Configure stats pid to 12989
+2024-07-06 13:19:20,817 INFO    MainThread:12989 [wandb_setup.py:_flush():76] Loading settings from /home/vera/.config/wandb/settings
+2024-07-06 13:19:20,818 INFO    MainThread:12989 [wandb_setup.py:_flush():76] Loading settings from /home/vera/vsc5/data/projects/AILS-MICCAI-UWF4DR-Challenge/wandb/settings
+2024-07-06 13:19:20,818 INFO    MainThread:12989 [wandb_setup.py:_flush():76] Loading settings from environment variables: {}
+2024-07-06 13:19:20,818 INFO    MainThread:12989 [wandb_setup.py:_flush():76] Applying setup settings: {'_disable_service': False}
+2024-07-06 13:19:20,818 INFO    MainThread:12989 [wandb_setup.py:_flush():76] Inferring run settings from compute environment: {'program_relpath': 'ails_miccai_uwf4dr_challenge/models/train_model_plain.py', 'program_abspath': '/home/vera/vsc5/data/projects/AILS-MICCAI-UWF4DR-Challenge/ails_miccai_uwf4dr_challenge/models/train_model_plain.py', 'program': '/home/vera/vsc5/data/projects/AILS-MICCAI-UWF4DR-Challenge/./ails_miccai_uwf4dr_challenge/models/train_model_plain.py'}
+2024-07-06 13:19:20,818 INFO    MainThread:12989 [wandb_setup.py:_flush():76] Applying login settings: {}
+2024-07-06 13:19:20,834 INFO    MainThread:12989 [wandb_init.py:_log_setup():520] Logging user logs to /home/vera/vsc5/data/projects/AILS-MICCAI-UWF4DR-Challenge/wandb/run-20240706_131920-avanok9g/logs/debug.log
+2024-07-06 13:19:20,847 INFO    MainThread:12989 [wandb_init.py:_log_setup():521] Logging internal logs to /home/vera/vsc5/data/projects/AILS-MICCAI-UWF4DR-Challenge/wandb/run-20240706_131920-avanok9g/logs/debug-internal.log
+2024-07-06 13:19:20,847 INFO    MainThread:12989 [wandb_init.py:init():560] calling init triggers
+2024-07-06 13:19:20,848 INFO    MainThread:12989 [wandb_init.py:init():567] wandb.init called with sweep_config: {}
+config: {'learning_rate': 0.001, 'architecture': 'CNN', 'dataset': 'UWF4DR-DEEPDRID', 'epochs': 15}
+2024-07-06 13:19:20,848 INFO    MainThread:12989 [wandb_init.py:init():610] starting backend
+2024-07-06 13:19:20,848 INFO    MainThread:12989 [wandb_init.py:init():614] setting up manager
+2024-07-06 13:19:21,026 INFO    MainThread:12989 [backend.py:_multiprocessing_setup():105] multiprocessing start_methods=fork,spawn,forkserver, using: spawn
+2024-07-06 13:19:21,036 INFO    MainThread:12989 [wandb_init.py:init():622] backend started and connected
+2024-07-06 13:19:21,460 INFO    MainThread:12989 [wandb_init.py:init():711] updated telemetry
+2024-07-06 13:19:22,459 INFO    MainThread:12989 [wandb_init.py:init():744] communicating run to backend with 90.0 second timeout
+2024-07-06 13:19:23,765 INFO    MainThread:12989 [wandb_run.py:_on_init():2402] communicating current version
+2024-07-06 13:19:23,876 INFO    MainThread:12989 [wandb_run.py:_on_init():2411] got version response upgrade_message: "wandb version 0.17.4 is available!  To upgrade, please run:\n $ pip install wandb --upgrade"
+
+2024-07-06 13:19:23,877 INFO    MainThread:12989 [wandb_init.py:init():795] starting run threads in backend
+2024-07-06 13:19:31,275 INFO    MainThread:12989 [wandb_run.py:_console_start():2380] atexit reg
+2024-07-06 13:19:31,276 INFO    MainThread:12989 [wandb_run.py:_redirect():2235] redirect: wrap_raw
+2024-07-06 13:19:31,276 INFO    MainThread:12989 [wandb_run.py:_redirect():2300] Wrapping output streams.
+2024-07-06 13:19:31,276 INFO    MainThread:12989 [wandb_run.py:_redirect():2325] Redirects installed.
+2024-07-06 13:19:31,306 INFO    MainThread:12989 [wandb_init.py:init():838] run started, returning control to user process

@@ -1,17 +1,29 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import wandb
 from sklearn.metrics import roc_auc_score, average_precision_score
 
-from ails_miccai_uwf4dr_challenge.metrics import Metric, sensitivity_score, specificity_score
+from ails_miccai_uwf4dr_challenge.models.metrics import Metric, sensitivity_score, specificity_score, MetricsMetaInfo, EpochMetricsEvaluationStrategy
 
 from ails_miccai_uwf4dr_challenge.dataset import ChallengeTaskType, CustomDataset, DatasetBuilder, DatasetOriginationType
 from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice, resize_only
 from torch.utils.data import DataLoader
 
-from ails_miccai_uwf4dr_challenge.models.trainer import NumBatches, Trainer
+from ails_miccai_uwf4dr_challenge.models.trainer import NumBatches, Trainer, EpochTrainingStrategy, EpochValidationStrategy, DefaultEpochTrainingStrategy, DefaultBatchTrainingStrategy
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph_plain import AutoMorphModel
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
+
+LEARNING_RATE = 1e-3
+EPOCHS = 15
+
+config={
+    "learning_rate": LEARNING_RATE,
+    "dataset": "UWF4DR-DEEPDRID",
+    "epochs": EPOCHS,
+    }
+
+
 
 def main():
     dataset = DatasetBuilder(dataset=DatasetOriginationType.ALL, task=ChallengeTaskType.TASK1)
@@ -33,28 +45,33 @@ def main():
         model.to(device)
         
         print("Training model: ", model.__class__.__name__)    
+        wandb.init(project="task1", config=config.update({"model": model.__class__.__name__}))
 
         metrics = [
             Metric('auroc', roc_auc_score, MetricsMetaInfo(evaluate_per_epoch=True, evaluate_per_batch=False)),
             Metric('auprc', average_precision_score, MetricsMetaInfo(evaluate_per_epoch=True, evaluate_per_batch=False)),
             Metric('accuracy', lambda y_true, y_pred: (y_pred.round() == y_true).mean(), MetricsMetaInfo(evaluate_per_epoch=True, evaluate_per_batch=True)),
             Metric('sensitivity', sensitivity_score, MetricsMetaInfo(evaluate_per_epoch=True, evaluate_per_batch=False)),
-            Metric('specificity', specificity_score, MetricsMetaInfo(evaluate_per_epoch=True, evaluate_per_batch=False)),
+            Metric('specificity', specificity_score, MetricsMetaInfo(evaluate_per_epoch=True, evaluate_per_batch=False))
 ]
 
         #batch_metrics_strategy = BatchMetricsEvaluationStrategy(metrics)
         epoch_metrics_strategy = EpochMetricsEvaluationStrategy(metrics)
     
         criterion = nn.BCEWithLogitsLoss()
-        optimizer = optim.AdamW(model.parameters(), lr=1e-3)
+        optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
         lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
-        trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device, training_strategy, validation_strategy, batch_metrics_strategy, epoch_metrics_strategy)        
+
+        training_strategy = DefaultEpochTrainingStrategy()
+        validation_strategy = DefaultBatchTrainingStrategy()
+
+        trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device, training_strategy, validation_strategy, epoch_metrics_strategy)        
 
         print("First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
         trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
         
         print("Now train train train")
-        trainer.train(num_epochs=15)
+        trainer.train(num_epochs=EPOCHS)
 
 if __name__ == "__main__":
     main()
