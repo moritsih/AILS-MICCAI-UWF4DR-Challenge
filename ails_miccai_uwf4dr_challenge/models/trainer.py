@@ -131,9 +131,9 @@ class DefaultEpochEndHook(EpochEndHook):
     def on_epoch_end(self, training_context: TrainingContext, train_results: ModelResultsAndLabels, val_results: ModelResultsAndLabels):
         curr_lr = training_context.optimizer.param_groups[0]['lr']
         print(training_context.get_epoch_info() + " Summary : " +
-              f'Train Loss: {train_results.loss:.4f}, Val Loss: {val_results.loss:.4f}, LR: {curr_lr:.2e}')
+              f'Train Loss: {train_results.model_results.loss:.4f}, Val Loss: {val_results.model_results.loss:.4f}, LR: {curr_lr:.2e}')
 
-class EpochMetricsEndHook(EpochValidationEndHook):
+class MetricsCalculationHook(EpochValidationEndHook):
     def __init__(self, epoch_metrics_strategy: EpochMetricsEvaluationStrategy):
         self.epoch_metrics_strategy = epoch_metrics_strategy
 
@@ -340,7 +340,7 @@ class Trainer:
         self.epoch_validation_end_hooks: List[EpochValidationEndHook] = []
 
         if epoch_metrics_strategy is not None:
-            self.add_epoch_end_hook(EpochMetricsEndHook(self.epoch_metrics_strategy))
+            self.add_epoch_validation_end_hook(MetricsCalculationHook(self.epoch_metrics_strategy))
 
     def add_epoch_end_hook(self, hook: EpochEndHook):
         self.epoch_end_hooks.append(hook)
