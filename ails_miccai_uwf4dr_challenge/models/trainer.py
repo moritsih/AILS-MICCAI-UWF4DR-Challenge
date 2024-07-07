@@ -133,20 +133,13 @@ class DefaultEpochEndHook(EpochEndHook):
         print(training_context.get_epoch_info() + " Summary : " +
               f'Train Loss: {train_results.loss:.4f}, Val Loss: {val_results.loss:.4f}, LR: {curr_lr:.2e}')
 
-class EpochMetricsEndHook(EpochEndHook):
+class EpochMetricsEndHook(EpochValidationEndHook):
     def __init__(self, epoch_metrics_strategy: EpochMetricsEvaluationStrategy):
         self.epoch_metrics_strategy = epoch_metrics_strategy
 
-    def on_epoch_end(self, training_context: TrainingContext, train_results: ModelResultsAndLabels, val_results: ModelResultsAndLabels):
-        all_labels, all_outputs = self.collect_outputs_and_labels(val_results)
-        epoch_metrics = self.epoch_metrics_strategy.evaluate(all_labels, all_outputs)
+    def on_epoch_validation_end(self, training_context: TrainingContext, val_results: ModelResultsAndLabels):
+        epoch_metrics = self.epoch_metrics_strategy.evaluate(np.array(val_results.labels), np.array(val_results.model_results.outputs))
         print("Epoch Metrics:", epoch_metrics)
-
-    def collect_outputs_and_labels(self, model_results_and_labels: ModelResultsAndLabels):
-
-        all_labels = model_results_and_labels.labels
-        all_outputs = model_results_and_labels.model_results.outputs
-        return all_labels, all_outputs
 
 class BatchTrainingStrategy(ABC):
     @abstractmethod
@@ -341,7 +334,7 @@ class Trainer:
         self.timer = Timer()
         self.training_strategy = training_strategy or DefaultEpochTrainingStrategy(DefaultBatchTrainingStrategy())
         self.validation_strategy = validation_strategy or DefaultEpochValidationStrategy(DefaultBatchValidationStrategy())
-        self.epoch_metrics_strategy = EpochMetricsEvaluationStrategy([])
+        self.epoch_metrics_strategy = epoch_metrics_strategy or EpochMetricsEvaluationStrategy([])
         self.epoch_end_hooks : List[EpochEndHook]= []
         self.epoch_train_end_hooks: List[EpochTrainEndHook] = []
         self.epoch_validation_end_hooks: List[EpochValidationEndHook] = []
@@ -371,8 +364,8 @@ class Trainer:
         
         for epoch in range(num_epochs):
             training_context.current_epoch = epoch + 1
-            model_train_results = self.training_strategy.train(training_context, self.train_loader)
-            model_val_results = self.validation_strategy.validate(training_context, self.val_loader)
+            model_train_results: ModelResultsAndLabels = self.training_strategy.train(training_context, self.train_loader)
+            model_val_results: ModelResultsAndLabels = self.validation_strategy.validate(training_context, self.val_loader)
 
             if isinstance(self.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):            
                 self.lr_scheduler.step(model_val_results.model_results.loss)

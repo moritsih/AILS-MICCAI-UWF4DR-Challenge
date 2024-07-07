@@ -44,8 +44,9 @@ def main():
     for model in [model2, model1]:        
         model.to(device)
         
-        print("Training model: ", model.__class__.__name__)    
-        wandb.init(project="task1", config=config.update({"model": model.__class__.__name__}))
+        model_class_name = model.__class__.__name__
+        print("Training model: ", model_class_name)    
+        wandb.init(project="task1", config=config.update({"model": model_class_name}))
 
         metrics = [
             Metric('auroc', roc_auc_score),
