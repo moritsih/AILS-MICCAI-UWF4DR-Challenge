@@ -48,12 +48,12 @@ def main():
         wandb.init(project="task1", config=config.update({"model": model.__class__.__name__}))
 
         metrics = [
-            Metric('auroc', roc_auc_score, MetricsMetaInfo(evaluate_per_epoch=True, evaluate_per_batch=False)),
-            Metric('auprc', average_precision_score, MetricsMetaInfo(evaluate_per_epoch=True, evaluate_per_batch=False)),
-            Metric('accuracy', lambda y_true, y_pred: (y_pred.round() == y_true).mean(), MetricsMetaInfo(evaluate_per_epoch=True, evaluate_per_batch=True)),
-            Metric('sensitivity', sensitivity_score, MetricsMetaInfo(evaluate_per_epoch=True, evaluate_per_batch=False)),
-            Metric('specificity', specificity_score, MetricsMetaInfo(evaluate_per_epoch=True, evaluate_per_batch=False))
-]
+            Metric('auroc', roc_auc_score),
+            Metric('auprc', average_precision_score),
+            Metric('accuracy', lambda y_true, y_pred: (y_pred.round() == y_true).mean()),
+            Metric('sensitivity', sensitivity_score),
+            Metric('specificity', specificity_score)
+        ]
 
         #batch_metrics_strategy = BatchMetricsEvaluationStrategy(metrics)
         epoch_metrics_strategy = EpochMetricsEvaluationStrategy(metrics)
@@ -62,10 +62,7 @@ def main():
         optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
         lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
 
-        training_strategy = DefaultEpochTrainingStrategy()
-        validation_strategy = DefaultBatchTrainingStrategy()
-
-        trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device, training_strategy, validation_strategy, epoch_metrics_strategy)        
+        trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device, epoch_metrics_strategy=epoch_metrics_strategy)        
 
         print("First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
         trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)

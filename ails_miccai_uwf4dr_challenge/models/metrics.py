@@ -3,17 +3,20 @@ from typing import Callable, List
 
 import numpy as np
 from sklearn.metrics import roc_curve
+import wandb
 
 class MetricsMetaInfo:
-    def __init__(self, evaluate_per_epoch: bool, evaluate_per_batch: bool):
+    def __init__(self, print_in_summary: bool = False, print_in_progress: bool = False, evaluate_per_epoch: bool = True, evaluate_per_batch: bool = False):
         self.evaluate_per_epoch = evaluate_per_epoch
         self.evaluate_per_batch = evaluate_per_batch
+        self.print_in_summary = print_in_summary
+        self.print_in_progress = print_in_progress
 
 class Metric:
-    def __init__(self, name: str, function: Callable, meta_info: MetricsMetaInfo):
+    def __init__(self, name: str, function: Callable, meta_info: MetricsMetaInfo = None):
         self.name = name
         self.function = function
-        self.meta_info: MetricsMetaInfo = meta_info
+        self.meta_info: MetricsMetaInfo = meta_info or MetricsMetaInfo()
 
 class MetricsEvaluationStrategy(ABC):
     def __init__(self, metrics: List[Metric]):

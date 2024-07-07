@@ -2,6 +2,7 @@ import enum
 from math import inf
 from abc import ABC, abstractmethod
 from typing import List
+import numpy as np
 import torch
 from tqdm import tqdm
 
@@ -88,6 +89,29 @@ class ModelResultsAndLabels:
         self.model_results = model_results
         self.labels = labels
 
+    def add_outputs(self, outputs):
+        self.model_results.outputs.extend(self._move_to_cpu_and_convert(outputs))
+
+    def add_labels(self, labels):
+        self.labels.extend(self._move_to_cpu_and_convert(labels))
+
+    def add_identifiers(self, identifiers):
+        if identifiers is not None:
+            if self.model_results.identifiers is None:
+                self.model_results.identifiers = []
+            self.model_results.identifiers.extend(identifiers)
+
+    def _move_to_cpu_and_convert(self, data):
+        if isinstance(data, torch.Tensor):
+            return data.cpu().detach().numpy().tolist()
+        elif isinstance(data, list):
+            if all(isinstance(item, torch.Tensor) for item in data):
+                return [item.cpu().detach().numpy().tolist() for item in data]
+            else:
+                return data
+        else:
+            raise TypeError(f"Expected data to be a tensor or a list of tensors, but got {type(data)}")
+
 class EpochEndHook(ABC):
     @abstractmethod
     def on_epoch_end(self, training_context: TrainingContext, train_results: ModelResultsAndLabels, val_results: ModelResultsAndLabels):
@@ -119,9 +143,10 @@ class EpochMetricsEndHook(EpochEndHook):
         print("Epoch Metrics:", epoch_metrics)
 
     def collect_outputs_and_labels(self, model_results_and_labels: ModelResultsAndLabels):
+
         all_labels = model_results_and_labels.labels
         all_outputs = model_results_and_labels.model_results.outputs
-        return np.array(all_labels), np.array(all_outputs)
+        return all_labels, all_outputs
 
 class BatchTrainingStrategy(ABC):
     @abstractmethod
@@ -222,9 +247,7 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
         running_loss = 0.0    
         total = 0
         avg_loss = inf
-        all_outputs = []
-        all_identifiers = []
-        all_labels = []
+        results = ModelResultsAndLabels(ModelResults(avg_loss, [], None), [])
 
         with tqdm(train_loader) as pbar:
             pbar.set_description(f"{training_context.get_epoch_info()} - Starting training... ")
@@ -237,22 +260,21 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
 
                 with training_context.timer.time(Timings.BATCH_PROCESSING):
                     batch_results = self.batch_strategy.train_batch(training_context, batch)
-                    loss = batch_results.loss
-
-                    all_outputs.extend(batch_results.model_results.outputs)
-                    all_labels.extend(batch_results.labels)
-
-                    if batch_results.identifiers is not None:
-                        all_identifiers.extend(batch_results.model_results.identifiers)
+                    loss = batch_results.model_results.loss
+                    results.add_outputs(batch_results.model_results.outputs)
+                    results.add_labels(batch_results.labels)
+                    results.add_identifiers(batch_results.model_results.identifiers)
                 
                 running_loss += loss * batch_size
                 total += batch_size
                 avg_loss = running_loss / total
+                results.model_results.loss = avg_loss
 
                 pbar.set_description(f"{training_context.get_epoch_info()} - Avg train Loss: {avg_loss:.6f}")
 
         avg_loss = running_loss / total
-        return ModelResultsAndLabels(ModelResults(avg_loss, all_outputs, all_identifiers), all_labels)
+        results.model_results.loss = avg_loss
+        return results
 
     def getAssertedBatchSize(self, batch):
         inputs = self.batch_strategy.batch_extractor_strategy.get_inputs(batch)
@@ -269,9 +291,7 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
         running_loss = 0.0
         total = 0
         avg_loss = inf
-        all_outputs = []
-        all_identifiers = []
-        all_labels = []
+        results = ModelResultsAndLabels(ModelResults(avg_loss, [], None), [])
 
         with torch.no_grad():
             with tqdm(val_loader) as pbar:
@@ -284,21 +304,22 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
                     
                     with torch.no_grad():
                         batch_results = self.batch_strategy.validate_batch(training_context, batch)
-                        loss = batch_results.loss
-                        all_outputs.extend(batch_results.model_results.outputs)
-                        all_labels.extend(batch_results.labels)
-
-                        if batch_results.identifiers is not None:
-                            all_identifiers.extend(batch_results.model_results.identifiers)
+                        loss = batch_results.model_results.loss
+                        results.add_outputs(batch_results.model_results.outputs)
+                        results.add_labels(batch_results.labels)
+                        results.add_identifiers(batch_results.model_results.identifiers)
 
 
+                    total += batch_size
                     running_loss += loss * batch_size
                     avg_loss = running_loss / total
+                    results.model_results.loss = avg_loss
 
                     pbar.set_description(f"{training_context.get_epoch_info()} - Avg val Loss: {avg_loss:.6f}")
 
         avg_loss = running_loss / total
-        return ModelResultsAndLabels(ModelResults(avg_loss, all_outputs, all_identifiers), all_labels)
+        results.model_results.loss = avg_loss
+        return results
     
     def getAssertedBatchSize(self, batch):
         inputs = self.batch_strategy.batch_extractor_strategy.get_inputs(batch)
@@ -354,7 +375,7 @@ class Trainer:
             model_val_results = self.validation_strategy.validate(training_context, self.val_loader)
 
             if isinstance(self.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):            
-                self.lr_scheduler.step(model_val_results.loss)
+                self.lr_scheduler.step(model_val_results.model_results.loss)
             elif self.lr_scheduler is not None:
                 self.lr_scheduler.step()
 
