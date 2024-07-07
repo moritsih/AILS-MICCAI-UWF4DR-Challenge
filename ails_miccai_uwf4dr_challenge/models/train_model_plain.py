@@ -4,13 +4,13 @@ import torch.optim as optim
 import wandb
 from sklearn.metrics import roc_auc_score, average_precision_score
 
-from ails_miccai_uwf4dr_challenge.models.metrics import Metric, sensitivity_score, specificity_score, MetricsMetaInfo, EpochMetricsEvaluationStrategy
+from ails_miccai_uwf4dr_challenge.models.metrics import sensitivity_score, specificity_score
 
 from ails_miccai_uwf4dr_challenge.dataset import ChallengeTaskType, CustomDataset, DatasetBuilder, DatasetOriginationType
 from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice, resize_only
 from torch.utils.data import DataLoader
 
-from ails_miccai_uwf4dr_challenge.models.trainer import NumBatches, Trainer, EpochTrainingStrategy, EpochValidationStrategy, DefaultEpochTrainingStrategy, DefaultBatchTrainingStrategy
+from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Metric, NumBatches, Trainer, EpochTrainingStrategy, EpochValidationStrategy, DefaultEpochTrainingStrategy, DefaultBatchTrainingStrategy
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph_plain import AutoMorphModel
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
 
@@ -57,7 +57,7 @@ def main():
         ]
 
         #batch_metrics_strategy = BatchMetricsEvaluationStrategy(metrics)
-        epoch_metrics_strategy = EpochMetricsEvaluationStrategy(metrics)
+        epoch_metrics_strategy = DefaultMetricsEvaluationStrategy(metrics)
     
         criterion = nn.BCEWithLogitsLoss()
         optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)

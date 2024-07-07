@@ -1,7 +1,7 @@
 import enum
 from math import inf
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Callable, List
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -9,8 +9,6 @@ from tqdm import tqdm
 from enum import Enum
 import time
 from contextlib import contextmanager
-
-from ails_miccai_uwf4dr_challenge.models.metrics import Metric, MetricsMetaInfo, MetricsEvaluationStrategy, EpochMetricsEvaluationStrategy
 
 class Timings(Enum):
     DATA_LOADING = "DATA_LOADING"
@@ -60,12 +58,21 @@ class TrainingContext:
         self.current_epoch: int = 1
         self.num_epochs: int = num_epochs
         self.num_batches: NumBatches = num_batches
+        self.epoch_metrics = []
 
     def get_epoch_info(self):
         return f"Epoch {self.current_epoch}/{self.num_epochs}"
     
     def get_device(self):
         return next(self.model.parameters()).device
+    
+    def register_epoch_metrics(self, epoch_metrics):
+        if len(self.epoch_metrics) >= self.current_epoch:
+            raise ValueError(f"Epoch metrics length exceeds the current epoch count: {self.current_epoch}, are you registering the metrics multiple times?")
+        self.epoch_metrics.append(epoch_metrics)
+
+    def get_current_epoch_metrics(self):
+        return self.epoch_metrics[self.current_epoch-1]
 
 
 class ModelResults:
@@ -130,16 +137,51 @@ class EpochValidationEndHook(ABC):
 class DefaultEpochEndHook(EpochEndHook):
     def on_epoch_end(self, training_context: TrainingContext, train_results: ModelResultsAndLabels, val_results: ModelResultsAndLabels):
         curr_lr = training_context.optimizer.param_groups[0]['lr']
-        print(training_context.get_epoch_info() + " Summary : " +
-              f'Train Loss: {train_results.model_results.loss:.4f}, Val Loss: {val_results.model_results.loss:.4f}, LR: {curr_lr:.2e}')
+        metrics_to_print = training_context.get_current_epoch_metrics()
 
+        metrics_str = ', '.join([f'{metric_name}: {metric_value:.4f}' for metric_name, metric_value in metrics_to_print.items()])
+
+        print(training_context.get_epoch_info() + " Summary : " +
+              f'Train Loss: {train_results.model_results.loss:.4f}, Val Loss: {val_results.model_results.loss:.4f}, LR: {curr_lr:.2e}, ' +
+              metrics_str)
+        
+class MetricsMetaInfo:
+    def __init__(self, print_in_summary: bool = True, print_in_progress: bool = False, evaluate_per_epoch: bool = True, evaluate_per_batch: bool = False):
+        self.evaluate_per_epoch = evaluate_per_epoch
+        self.evaluate_per_batch = evaluate_per_batch
+        self.print_in_summary = print_in_summary
+        self.print_in_progress = print_in_progress
+
+class Metric:
+    def __init__(self, name: str, function: Callable, meta_info: MetricsMetaInfo = None):
+        self.name = name
+        self.function = function
+        self.meta_info: MetricsMetaInfo = meta_info or MetricsMetaInfo()
+
+class MetricsEvaluationStrategy(ABC):
+    def __init__(self, metrics: List[Metric]):
+        self.metrics = metrics
+
+    @abstractmethod
+    def evaluate(self, y_true, y_pred):
+        pass
+
+class DefaultMetricsEvaluationStrategy(MetricsEvaluationStrategy):
+    def evaluate(self, y_true, y_pred):
+        results = {}
+        for metric in self.metrics:
+            if metric.meta_info.evaluate_per_epoch:
+                results[metric.name] = metric.function(y_true, y_pred)
+                #wandb.log({metric.name: results[metric.name]})
+        return results
+    
 class MetricsCalculationHook(EpochValidationEndHook):
-    def __init__(self, epoch_metrics_strategy: EpochMetricsEvaluationStrategy):
+    def __init__(self, epoch_metrics_strategy: DefaultMetricsEvaluationStrategy):
         self.epoch_metrics_strategy = epoch_metrics_strategy
 
     def on_epoch_validation_end(self, training_context: TrainingContext, val_results: ModelResultsAndLabels):
         epoch_metrics = self.epoch_metrics_strategy.evaluate(np.array(val_results.labels), np.array(val_results.model_results.outputs))
-        print("Epoch Metrics:", epoch_metrics)
+        training_context.register_epoch_metrics(epoch_metrics)
 
 class BatchTrainingStrategy(ABC):
     @abstractmethod
@@ -322,7 +364,7 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
 
 class Trainer:
     def __init__(self, model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device=None, training_strategy: EpochTrainingStrategy=None, 
-            validation_strategy: EpochValidationStrategy=None, epoch_metrics_strategy: EpochMetricsEvaluationStrategy = None):
+            validation_strategy: EpochValidationStrategy=None, epoch_metrics_strategy: DefaultMetricsEvaluationStrategy = None):
         assert model is not None
         self.model = model
         self.train_loader = train_loader
@@ -334,7 +376,7 @@ class Trainer:
         self.timer = Timer()
         self.training_strategy = training_strategy or DefaultEpochTrainingStrategy(DefaultBatchTrainingStrategy())
         self.validation_strategy = validation_strategy or DefaultEpochValidationStrategy(DefaultBatchValidationStrategy())
-        self.epoch_metrics_strategy = epoch_metrics_strategy or EpochMetricsEvaluationStrategy([])
+        self.epoch_metrics_strategy = epoch_metrics_strategy or DefaultMetricsEvaluationStrategy([])
         self.epoch_end_hooks : List[EpochEndHook]= []
         self.epoch_train_end_hooks: List[EpochTrainEndHook] = []
         self.epoch_validation_end_hooks: List[EpochValidationEndHook] = []
