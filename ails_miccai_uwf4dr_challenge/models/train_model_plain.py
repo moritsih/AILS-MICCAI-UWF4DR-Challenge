@@ -10,7 +10,7 @@ from ails_miccai_uwf4dr_challenge.dataset import ChallengeTaskType, CustomDatase
 from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice, resize_only
 from torch.utils.data import DataLoader
 
-from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Metric, MetricCalculatedHook, NumBatches, Trainer, EpochTrainingStrategy, EpochValidationStrategy, DefaultEpochTrainingStrategy, DefaultBatchTrainingStrategy
+from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Metric, MetricCalculatedHook, NumBatches, Trainer, EpochTrainingStrategy, EpochValidationStrategy, DefaultEpochTrainingStrategy, DefaultBatchTrainingStrategy, TrainingContext
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph_plain import AutoMorphModel
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
 
@@ -57,9 +57,10 @@ def main():
         ]
 
         class WandbLoggingHook(MetricCalculatedHook):
-            def on_metric_calculated(self, metric, result):
+            def on_metric_calculated(self, training_context: TrainingContext, metric: Metric, result, last_metric_for_epoch: bool):
                 import wandb
-                wandb.log({metric.name: result})
+                print(f"Logging metric {metric.name} with value {result} to wandb - commit: {last_metric_for_epoch}")
+                wandb.log(data={metric.name: result}, commit=last_metric_for_epoch)
 
         metrics_eval_strategy = DefaultMetricsEvaluationStrategy(metrics).register_metric_calculated_hook(WandbLoggingHook())
     
@@ -67,13 +68,18 @@ def main():
         optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
         lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
 
-        trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device, metrics_eval_strategy=metrics_eval_strategy)        
+        trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device, 
+                          metrics_eval_strategy=metrics_eval_strategy)
 
         print("First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
         trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
         
         print("Now train train train")
         trainer.train(num_epochs=EPOCHS)
+
+
+
+        print("Finished training")
 
 if __name__ == "__main__":
     main()

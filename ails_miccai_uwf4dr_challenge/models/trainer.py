@@ -170,7 +170,7 @@ class MetricsEvaluationStrategy(ABC):
 
 class MetricCalculatedHook(ABC):
     @abstractmethod
-    def on_metric_calculated(self, metric: Metric, result):
+    def on_metric_calculated(self, training_context: TrainingContext, metric: Metric, result, last_metric_for_epoch: bool):
         pass
 
 class LossMetricNames(enum.Enum):
@@ -187,16 +187,17 @@ class DefaultMetricsEvaluationStrategy(MetricsEvaluationStrategy):
             self.metrics.append(Metric(LossMetricNames.VAL_LOSS.value, lambda y_true, y_pred: 0, meta_info=MetricsMetaInfo(print_in_summary=True, print_in_progress=True, evaluate_per_epoch=False, evaluate_per_batch=False)))
         self.metric_calculated_hooks: List[MetricCalculatedHook]=[]
 
-    def evaluate(self, model_train_results: ModelResultsAndLabels, model_val_results: ModelResultsAndLabels):
+    def evaluate(self, training_context: TrainingContext, model_train_results: ModelResultsAndLabels, model_val_results: ModelResultsAndLabels):
         results = {}
 
         y_true = np.array(model_val_results.labels)
         y_pred = np.array(model_val_results.model_results.outputs)
 
-        for metric in self.metrics:
+        for i, metric in enumerate(self.metrics):
             
             notify_hooks = False
             result = None
+            last_metric_for_epoch = (i == len(self.metrics) - 1)
 
             if metric.name == LossMetricNames.TRAIN_LOSS.value:
                 result = model_train_results.model_results.loss
@@ -213,7 +214,9 @@ class DefaultMetricsEvaluationStrategy(MetricsEvaluationStrategy):
 
             if notify_hooks:
                 for hook in self.metric_calculated_hooks:
-                    hook.on_metric_calculated(metric, result)
+                    hook.on_metric_calculated(training_context, metric, result, last_metric_for_epoch)
+
+        training_context.register_epoch_metrics(results)
                 
         return results
     
@@ -417,14 +420,17 @@ class Trainer:
         self.epoch_train_end_hooks: List[EpochTrainEndHook] = []
         self.epoch_validation_end_hooks: List[EpochValidationEndHook] = []
 
-    def add_epoch_end_hook(self, hook: EpochEndHook):
+    def add_epoch_end_hook(self, hook: EpochEndHook) -> 'Trainer':
         self.epoch_end_hooks.append(hook)
+        return self
 
-    def add_epoch_validation_end_hook(self, hook: EpochValidationEndHook):
+    def add_epoch_validation_end_hook(self, hook: EpochValidationEndHook) -> 'Trainer':
         self.epoch_validation_end_hooks.append(hook)
+        return self
 
-    def add_epoch_train_end_hook(self, hook: EpochTrainEndHook):
+    def add_epoch_train_end_hook(self, hook: EpochTrainEndHook) -> 'Trainer':
         self.epoch_train_end_hooks.append(hook)
+        return self
 
     def train(self, num_epochs: int, num_batches: NumBatches = NumBatches.ALL):
         if self.device.type != next(self.model.parameters()).device.type:
@@ -453,8 +459,7 @@ class Trainer:
             for hook in self.epoch_validation_end_hooks:
                 hook.on_epoch_validation_end(training_context, model_val_results)
 
-            epoch_metrics = self.metrics_eval_strategy.evaluate(model_train_results, model_val_results)
-            training_context.register_epoch_metrics(epoch_metrics)
+            self.metrics_eval_strategy.evaluate(training_context, model_train_results, model_val_results)
             
             for hook in self.epoch_end_hooks:
                 hook.on_epoch_end(training_context, model_train_results, model_val_results)
