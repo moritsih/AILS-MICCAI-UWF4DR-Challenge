@@ -56,14 +56,12 @@ def main():
             Metric('specificity', specificity_score)
         ]
 
-        metrics_eval_strategy = DefaultMetricsEvaluationStrategy(metrics)
-
         class WandbLoggingHook(MetricCalculatedHook):
             def on_metric_calculated(self, metric, result):
                 import wandb
                 wandb.log({metric.name: result})
 
-        metrics_eval_strategy.register_metric_calculated_hook(WandbLoggingHook())
+        metrics_eval_strategy = DefaultMetricsEvaluationStrategy(metrics).register_metric_calculated_hook(WandbLoggingHook())
     
         criterion = nn.BCEWithLogitsLoss()
         optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)

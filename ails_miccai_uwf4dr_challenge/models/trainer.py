@@ -217,9 +217,10 @@ class DefaultMetricsEvaluationStrategy(MetricsEvaluationStrategy):
                 
         return results
     
-    def register_metric_calculated_hook(self, metric_calculated_hook: MetricCalculatedHook):
+    def register_metric_calculated_hook(self, metric_calculated_hook: MetricCalculatedHook) -> 'DefaultMetricsEvaluationStrategy':
         assert metric_calculated_hook is not None
         self.metric_calculated_hooks.append(metric_calculated_hook)
+        return self
 
 class BatchTrainingStrategy(ABC):
     @abstractmethod
