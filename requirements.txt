@@ -16,7 +16,7 @@ tqdm
 torch
 torchvision
 opencv-python
-efficientnet_pytorch
+efficientnet-pytorch
 wandb
 monai
 lightning
