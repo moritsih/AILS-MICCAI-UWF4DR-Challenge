@@ -67,8 +67,8 @@ def train(config=None):
     trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device, 
                         metrics_eval_strategy=metrics_eval_strategy)
 
-    print("First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
-    trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
+    #print("First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
+    #trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
     
     print("Now train train train")
     trainer.train(num_epochs=config["epochs"])
