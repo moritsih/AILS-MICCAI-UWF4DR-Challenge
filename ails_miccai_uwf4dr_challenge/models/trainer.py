@@ -96,6 +96,11 @@ class ModelResultsAndLabels:
         self.model_results = model_results
         self.labels = labels
 
+    def add_batch_results(self, batch_results):
+        self.add_outputs(batch_results.model_results.outputs)
+        self.add_labels(batch_results.labels)
+        self.add_identifiers(batch_results.model_results.identifiers)
+
     def add_outputs(self, outputs):
         self.model_results.outputs.extend(self._move_to_cpu_and_convert(outputs))
 
@@ -328,14 +333,13 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
 
                 with training_context.timer.time(Timings.BATCH_PROCESSING):
                     batch_results = self.batch_strategy.train_batch(training_context, batch)
-                    loss = batch_results.model_results.loss
-                    results.add_outputs(batch_results.model_results.outputs)
-                    results.add_labels(batch_results.labels)
-                    results.add_identifiers(batch_results.model_results.identifiers)
-                
+                    results.add_batch_results(batch_results)
+
+                loss = batch_results.model_results.loss
                 running_loss += loss * batch_size
                 total += batch_size
                 avg_loss = running_loss / total
+                
                 results.model_results.loss = avg_loss
 
                 pbar.set_description(f"{training_context.get_epoch_info()} - Avg train Loss: {avg_loss:.6f}")
@@ -372,15 +376,13 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
                     
                     with torch.no_grad():
                         batch_results = self.batch_strategy.validate_batch(training_context, batch)
-                        loss = batch_results.model_results.loss
-                        results.add_outputs(batch_results.model_results.outputs)
-                        results.add_labels(batch_results.labels)
-                        results.add_identifiers(batch_results.model_results.identifiers)
-
-
+                        results.add_batch_results(batch_results)
+                    
+                    loss = batch_results.model_results.loss
                     total += batch_size
                     running_loss += loss * batch_size
                     avg_loss = running_loss / total
+                    
                     results.model_results.loss = avg_loss
 
                     pbar.set_description(f"{training_context.get_epoch_info()} - Avg val Loss: {avg_loss:.6f}")
