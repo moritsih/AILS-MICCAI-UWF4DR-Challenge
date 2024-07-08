@@ -59,7 +59,6 @@ def main():
         class WandbLoggingHook(MetricCalculatedHook):
             def on_metric_calculated(self, training_context: TrainingContext, metric: Metric, result, last_metric_for_epoch: bool):
                 import wandb
-                print(f"Logging metric {metric.name} with value {result} to wandb - commit: {last_metric_for_epoch}")
                 wandb.log(data={metric.name: result}, commit=last_metric_for_epoch)
 
         metrics_eval_strategy = DefaultMetricsEvaluationStrategy(metrics).register_metric_calculated_hook(WandbLoggingHook())
