@@ -10,7 +10,7 @@ from ails_miccai_uwf4dr_challenge.dataset import ChallengeTaskType, CustomDatase
 from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice, resize_only
 from torch.utils.data import DataLoader
 
-from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Metric, NumBatches, Trainer, EpochTrainingStrategy, EpochValidationStrategy, DefaultEpochTrainingStrategy, DefaultBatchTrainingStrategy
+from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Metric, MetricCalculatedHook, NumBatches, Trainer, EpochTrainingStrategy, EpochValidationStrategy, DefaultEpochTrainingStrategy, DefaultBatchTrainingStrategy
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph_plain import AutoMorphModel
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
 
@@ -56,14 +56,20 @@ def main():
             Metric('specificity', specificity_score)
         ]
 
-        #batch_metrics_strategy = BatchMetricsEvaluationStrategy(metrics)
-        epoch_metrics_strategy = DefaultMetricsEvaluationStrategy(metrics)
+        metrics_eval_strategy = DefaultMetricsEvaluationStrategy(metrics)
+
+        class WandbLoggingHook(MetricCalculatedHook):
+            def on_metric_calculated(self, metric, result):
+                import wandb
+                wandb.log({metric.name: result})
+
+        metrics_eval_strategy.register_metric_calculated_hook(WandbLoggingHook())
     
         criterion = nn.BCEWithLogitsLoss()
         optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
         lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
 
-        trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device, epoch_metrics_strategy=epoch_metrics_strategy)        
+        trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device, metrics_eval_strategy=metrics_eval_strategy)        
 
         print("First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
         trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
