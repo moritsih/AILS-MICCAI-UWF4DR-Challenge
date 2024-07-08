@@ -1,4 +1,5 @@
 import wandb
+from ails_miccai_uwf4dr_challenge.config import WANDB_API_KEY
 from train_model_plain import train
 
 # Define the sweep configuration
@@ -19,6 +20,8 @@ sweep_config = {
         }
     }
 }
+
+wandb.login(key=WANDB_API_KEY)
 
 # Initialize the sweep
 sweep_id = wandb.sweep(sweep=sweep_config, project="task1")

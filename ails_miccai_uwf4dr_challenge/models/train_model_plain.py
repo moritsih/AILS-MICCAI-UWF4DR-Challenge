@@ -10,6 +10,9 @@ from ails_miccai_uwf4dr_challenge.dataset import ChallengeTaskType, CustomDatase
 from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice, resize_only
 from torch.utils.data import DataLoader
 
+
+from ails_miccai_uwf4dr_challenge.config import WANDB_API_KEY
+
 from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Metric, MetricCalculatedHook, NumBatches, Trainer, EpochTrainingStrategy, EpochValidationStrategy, DefaultEpochTrainingStrategy, DefaultBatchTrainingStrategy, TrainingContext
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph_plain import AutoMorphModel
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
@@ -83,4 +86,7 @@ if __name__ == "__main__":
         "batch_size": 4,
         "model_type": Task1EfficientNetB4().__class__.__name__ 
     }
+
+    wandb.login(key=WANDB_API_KEY)
+
     train(config)

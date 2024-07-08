@@ -1,5 +1,4 @@
 from pathlib import Path
-import torch
 from dotenv import load_dotenv
 from loguru import logger
 
@@ -20,6 +19,8 @@ MODELS_DIR = PROJ_ROOT / "models"
 
 REPORTS_DIR = PROJ_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
+
+WANDB_API_KEY = "0901b42479c50a6ec6a982a92c82075b1ea483dc"
 
 # If tqdm is installed, configure loguru with tqdm.write
 # https://github.com/Delgan/loguru/issues/135
