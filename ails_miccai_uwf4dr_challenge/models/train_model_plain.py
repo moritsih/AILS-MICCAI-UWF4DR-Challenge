@@ -76,6 +76,9 @@ def train(config=None):
     print("Finished training")
 
 if __name__ == "__main__":
+
+    wandb.require("core") # The new W&B backend becomes opt-out in version 0.18.0; try it out with `wandb.require("core")`! See https://wandb.me/wandb-core for more information.
+
     LEARNING_RATE = 1e-3
     EPOCHS = 15
 

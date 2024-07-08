@@ -20,7 +20,7 @@ MODELS_DIR = PROJ_ROOT / "models"
 REPORTS_DIR = PROJ_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
 
-WANDB_API_KEY = "0901b42479c50a6ec6a982a92c82075b1ea483dc"
+WANDB_API_KEY = "e84f9aa9585ed75083b2923b94f68b05c287fe7e"
 
 # If tqdm is installed, configure loguru with tqdm.write
 # https://github.com/Delgan/loguru/issues/135
