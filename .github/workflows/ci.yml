@@ -33,6 +33,9 @@ jobs:
         # check for lower priority issues
         flake8 . --config=.flake8-ci --count --exit-zero --statistics
 
+    - name: Add project root to PYTHONPATH
+      run: echo "PYTHONPATH=$PYTHONPATH:$(pwd)" >> $GITHUB_ENV
+
     - name: Test with pytest
       run: |
         pytest tests/
