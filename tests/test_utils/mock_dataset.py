@@ -3,6 +3,7 @@ import numpy as np
 from torch.utils.data import Dataset
 import torch
 from ails_miccai_uwf4dr_challenge.dataset import ChallengeTaskType
+from PIL import Image
 
 class MockDatasetBuilder:
     def __init__(self, num_samples=100, task_type=ChallengeTaskType.TASK1, split_ratio=0.8):
@@ -64,11 +65,12 @@ class MockDataset(Dataset):
         # Create a mock image (e.g., 224x224 with 3 channels)
         img = np.random.randint(0, 256, (224, 224, 3), dtype=np.uint8)
 
+        img = Image.fromarray(img)  # Convert to PIL image
+
         if self.transform:
             img = self.transform(img)
 
-        # Convert image and label to tensor
-        img = torch.tensor(img, dtype=torch.float32).permute(2, 0, 1) / 255.0
+        # img is already a tensor after transformations, no need to convert again
         label = torch.tensor(label, dtype=torch.float32).unsqueeze(0)
 
         return img, label
