@@ -5,7 +5,7 @@ from pathlib import Path
 import torch.optim as optim
 
 class AutoMorphModel(nn.Module):
-    def __init__(self):
+    def __init__(self, pretrained=True):
         super(AutoMorphModel, self).__init__()
 
         # code taken from https://github.com/rmaphoh/AutoMorph/blob/main/M1_Retinal_Image_quality_EyePACS/model.py
@@ -21,9 +21,9 @@ class AutoMorphModel(nn.Module):
             nn.Linear(64, 3)
         )
         self.model._fc = net_fl
-
-        checkpoint_path = Path().resolve() / "models" / "AutoMorph" / "automorph_best_loss_checkpoint.pth"
-        self.model.load_state_dict(torch.load(checkpoint_path, map_location='cpu'))
+        if pretrained:
+            checkpoint_path = Path().resolve() / "models" / "AutoMorph" / "automorph_best_loss_checkpoint.pth"
+            self.model.load_state_dict(torch.load(checkpoint_path, map_location='cpu'))
 
         # add a final layer that outputs single value
         self.model._fc.add_module("7", nn.Linear(3, 1))

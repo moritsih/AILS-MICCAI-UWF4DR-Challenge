@@ -1,0 +1,9 @@
+[flake8]
+exclude = .git,notebooks,references,data,venv,wandb
+max-complexity = 10
+max-line-length = 99
+# E9: syntax error
+# F63: 'x' may be undefined, or defined from star imports: y
+# F7: local variable 'x' is assigned to but never used
+# F82: local variable 'x' is assigned to but never used
+select = E9,F63,F7,F82
