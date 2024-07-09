@@ -13,7 +13,7 @@ sweep_config = {
             "values": [10, 15, 20]
         },
         "batch_size": {
-            "values": [4, 8, 9]
+            "values": [4, 7, 9]
         },
         "model_type": {
             "values": ["AutoMorphModel", "Task1EfficientNetB4"]
