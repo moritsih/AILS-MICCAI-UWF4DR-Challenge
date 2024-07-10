@@ -74,4 +74,3 @@ class AutoMorphModel(nn.Module):
         self.model._fc = net_fl
         # add a final layer that outputs single value
         self.model._fc.add_module("7", nn.Linear(3, 1))
-        # TODO whats about weights for the final layer?
