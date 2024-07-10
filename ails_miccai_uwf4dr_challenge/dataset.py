@@ -15,8 +15,9 @@ app = typer.Typer()
 
 
 class OriginalDataset:
-    def __init__(self):
+    def __init__(self, data_dir=RAW_DATA_DIR):
         self.data = self._merge_all_data_into_global_df()
+        self.data_dir = data_dir
         
 
     def get_data(self):
@@ -29,8 +30,8 @@ class OriginalDataset:
 
     def _merge_all_data_into_global_df(self):
 
-        task1_dir = Path(RAW_DATA_DIR / 'Task 1 Image Quality Assessment')
-        task23_dir = Path(RAW_DATA_DIR / 'Task 2 Referable DR and Task 3 DME')
+        task1_dir = Path(self.data_dir / 'Task 1 Image Quality Assessment')
+        task23_dir = Path(self.data_dir / 'Task 2 Referable DR and Task 3 DME')
 
         # get iterable of image paths for both tasks before combining
         imgs_task1 = Path(task1_dir / '1. Images' / '1. Training').glob('*.jpg')
@@ -74,10 +75,11 @@ class OriginalDataset:
 
 
 class DeepDridDataset:
-    def __init__(self):
+    def __init__(self, data_dir=EXTERNAL_DATA_DIR):
+        self.data_dir = data_dir
 
         # find all images in the entire DeepDRiD dataset folder by recursively searching for all jpg files
-        deepdrid_path = Path(EXTERNAL_DATA_DIR) / 'DeepDRiD' / 'ultra-widefield_images'
+        deepdrid_path = Path(self.data_dir) / 'DeepDRiD' / 'ultra-widefield_images'
         images = pd.DataFrame(deepdrid_path.rglob('*.jpg'), columns=['image_path'])
 
         # read in all the different label files
@@ -214,15 +216,17 @@ class DatasetBuilder:
     
     '''
 
-    def __init__(self, dataset: DatasetOriginationType = DatasetOriginationType.ALL, task: ChallengeTaskType = ChallengeTaskType.FULL, split_ratio: float = 0.8, get_mini_dataset=False, frac=0.2):
+    def __init__(self, dataset: DatasetOriginationType = DatasetOriginationType.ALL, task: ChallengeTaskType = ChallengeTaskType.FULL,
+                 split_ratio: float = 0.8, get_mini_dataset=False, frac=0.2,
+                 original_data_dir=RAW_DATA_DIR, external_data_dir=EXTERNAL_DATA_DIR):
 
 
         ############################################
         # FILTER FOR DATASET
         ############################################
         if dataset == DatasetOriginationType.ALL:
-            self.original = OriginalDataset()
-            self.deepdrid = DeepDridDataset()
+            self.original = OriginalDataset(data_dir=original_data_dir)
+            self.deepdrid = DeepDridDataset(data_dir=external_data_dir)
             self.data = self._concat_datasets([self.original.get_data(), self.deepdrid.get_data()]) 
 
         elif dataset == DatasetOriginationType.ORIGINAL:
