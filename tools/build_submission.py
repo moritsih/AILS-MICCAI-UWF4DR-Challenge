@@ -5,6 +5,7 @@ import importlib.util
 import typer
 from datetime import datetime
 
+app = typer.Typer()
 
 class SubmissionBuilder:
     """
@@ -15,12 +16,12 @@ class SubmissionBuilder:
     - metadata (MUST): indicates the submission is in a code submission format - do not remove this file.
     - model weights (Optional): the model weights file can be in any format as long as it is compatible with the model and the permitted Python packages.
 
-    Usage: `python submission_builder.py`
+    Usage: `python build_submission.py`
         Looks up all folders in the "models" directory and prompts to choose one to package it into a submission zip file ready to upload to codalab (including metadata file).
         Additionally verifies the model file for mandatory methods.
     """
 
-    def __init__(self, models_dir: str = ".", output_dir: str = "../submissions"):
+    def __init__(self, models_dir: str = "../models", output_dir: str = "../submissions"):
         """
         Initialize the SubmissionBuilder.
 
@@ -30,9 +31,6 @@ class SubmissionBuilder:
         """
         self.models_dir = models_dir
         self.output_dir = output_dir
-        self.app = typer.Typer()
-
-        self.app.command()(self.package_submission)
 
     def list_model_folders(self):
         """
@@ -71,33 +69,36 @@ class SubmissionBuilder:
             if not hasattr(model_class, method):
                 raise ValueError(f"The model class must contain a '{method}' method.")
 
-    def create_metadata_file(self, metadata_path: str):
+    def copy_or_create_metadata_file(self, model_dir: str, temp_dir: str):
         """
-        Create the metadata file if it does not exist.
+        Check for a metadata file in the model folder. If not present, create an empty one in the temp directory.
 
         Args:
-        metadata_path (str): Path to the metadata file.
+        model_folder (str): Path to the model folder.
+        temp_dir (str): Path to the temporary directory where the metadata file will be created if not found.
         """
-        if not os.path.exists(metadata_path):
-            with open(metadata_path, 'w') as f:
-                f.write('Indicates the submission is in a code submission format - do not remove this file.')
+        metadata_file_path = os.path.join(model_dir, "metadata")
+        temp_metadata_path = os.path.join(temp_dir, "metadata")
 
-    def create_submission_zip(self, model_folder: str, auto_include_weights: bool = True):
+        # Check if metadata file exists in the model folder
+        if not os.path.exists(metadata_file_path):
+            # If not, create an empty metadata file in the temp directory
+            with open(temp_metadata_path, 'w') as f:
+                f.write('Indicates the submission is in a code submission format - do not remove this file.')
+        else:
+            # If exists, copy the existing metadata file to the temp directory
+            shutil.copy(metadata_file_path, temp_metadata_path)
+
+    def create_submission_zip(self, model_dir: str, include_pth_files: bool = True):
         """
         Create a submission zip file for the CodaLab challenge.
 
         Args:
         model_folder (str): Path to the model folder.
-        auto_include_weights (bool): Automatically lookup and include the .pth weights file if True. Defaults to True.
+        auto_include_weights (bool): Automatically lookup and include the .pth weights files if True. Defaults to True.
         """
-        model_file = os.path.join(model_folder, "model.py")
-        weights_file = None
-
-        if auto_include_weights:
-            for file in os.listdir(model_folder):
-                if file.endswith(".pth"):
-                    weights_file = os.path.join(model_folder, file)
-                    break
+        model_file = os.path.join(model_dir, "model.py")
+        weights_files = []
 
         # Verify the model class
         self.verify_model_class(model_file)
@@ -107,64 +108,68 @@ class SubmissionBuilder:
 
         shutil.copy(model_file, os.path.join(temp_dir, "model.py"))
 
-        metadata_file = os.path.join(temp_dir, "metadata")
-        self.create_metadata_file(metadata_file)
+        self.copy_or_create_metadata_file(model_dir, temp_dir)
 
-        # Copy the weights file if provided
-        if weights_file:
-            shutil.copy(weights_file, os.path.join(temp_dir, os.path.basename(weights_file)))
+        # copy weights files
+        if include_pth_files:
+            for file in os.listdir(model_dir):
+                if file.endswith(".pth"):
+                    weights_file = os.path.join(model_dir, file)
+                    shutil.copy(weights_file, os.path.join(temp_dir, os.path.basename(weights_file)))
 
-        # Create the output directory if it doesn't exist
+        # create output directory if it doesn't exist
         os.makedirs(self.output_dir, exist_ok=True)
 
         # Create a zip file with the folder name and timestamp
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        output_zip = os.path.join(self.output_dir, f"{os.path.basename(model_folder)}_{timestamp}.zip")
+        output_zip = os.path.join(self.output_dir, f"{os.path.basename(model_dir)}_{timestamp}.zip")
         with zipfile.ZipFile(output_zip, 'w') as zipf:
+            print(f"Create submission zip file '{output_zip}'...")
             for root, dirs, files in os.walk(temp_dir):
                 for file in files:
+                    print(f"-- add file [{file}]")
                     zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), temp_dir))
 
-        # Clean up the temporary directory
+        # clean up temporary directory
         shutil.rmtree(temp_dir)
 
         typer.echo(f"Submission zip file '{output_zip}' created successfully.")
+        typer.echo(f"Please dont forget to upload the submission zip file to gDrive [https://drive.google.com/drive/folders/1K9Ojqr-6IWIPC7TZuNQt3qhyIN2ExKPY?usp=sharing]")
 
-    def package_submission(self, auto_include_weights: bool = True):
-        """
-        Package the model, metadata, and weights into a submission zip file.
+@app.command()
+def build_submission(auto_include_weights: bool = True, models_dir: str = "../models", output_dir: str = "../submissions"):
+    """
+    Package the model, metadata, and weights into a submission zip file.
 
-        Args:
-        auto_include_weights (bool, optional): Automatically lookup and include the .pth weights file. Defaults to True.
-        """
-        # list folders in model directory
-        model_folders = self.list_model_folders()
-        if not model_folders:
-            typer.echo("No model folders found in the specified directory.")
-            raise typer.Exit()
+    Args:
+    auto_include_weights (bool, optional): Automatically lookup and include the .pth weights files. Defaults to True.
+    """
+    builder = SubmissionBuilder(models_dir, output_dir)
+    # list folders in model directory
+    model_folders = builder.list_model_folders()
+    if not model_folders:
+        typer.echo("No model folders found in the specified directory.")
+        raise typer.Exit()
 
-        # prompt the user to choose one
-        typer.echo("Choose a model folder:")
-        for idx, folder in enumerate(model_folders, start=1):
-            typer.echo(f"{idx}. {folder}")
-        folder_index = typer.prompt("Enter the number of the model folder", type=int) - 1
+    # prompt the user to choose one
+    typer.echo("Choose a model folder:")
+    for idx, folder in enumerate(model_folders, start=1):
+        typer.echo(f"{idx}. {folder}")
+    folder_index = typer.prompt("Enter the number of the model folder", type=int) - 1
 
-        if folder_index < 0 or folder_index >= len(model_folders):
-            typer.echo("Invalid choice.")
-            raise typer.Exit()
+    if folder_index < 0 or folder_index >= len(model_folders):
+        typer.echo("Invalid choice.")
+        raise typer.Exit()
 
-        model_folder = model_folders[folder_index]
+    model_folder = model_folders[folder_index]
 
-        # verify and create the submission zip
-        self.create_submission_zip(os.path.join(self.models_dir, model_folder), auto_include_weights)
+    # verify and create the submission zip
+    builder.create_submission_zip(os.path.join(builder.models_dir, model_folder), auto_include_weights)
 
-    def run(self):
-        """
-        Run the Typer app.
-        """
-        self.app()
+
+def run():
+    app()
 
 
 if __name__ == "__main__":
-    builder = SubmissionBuilder()
-    builder.run()
+    run()
