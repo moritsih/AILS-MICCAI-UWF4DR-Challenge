@@ -74,7 +74,7 @@ def train(config=None):
     # build a file name for the model weights containing current timestamp and the model class
     training_timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
     persist_model_hook = PersistBestModelOnEpochEndHook(f"best_model_{training_timestamp}.pth")
-    # trainer.add_epoch_end_hook(persist_model_hook) # TODO uncomment this line to save the best model
+    trainer.add_epoch_end_hook(persist_model_hook) # TODO uncomment this line to save the best model
 
     #print("First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
     #trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
