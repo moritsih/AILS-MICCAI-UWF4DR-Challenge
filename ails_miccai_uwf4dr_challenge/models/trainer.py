@@ -149,7 +149,21 @@ class DefaultEpochEndHook(EpochEndHook):
         print(training_context.get_epoch_info() + " Summary : " +
               f'Train Loss: {train_results.model_results.loss:.4f}, Val Loss: {val_results.model_results.loss:.4f}, LR: {curr_lr:.2e}, ' +
               metrics_str)
-        
+
+
+class PersistBestModelOnEpochEndHook(EpochEndHook):
+    def __init__(self, save_path):
+        self.save_path = save_path
+        self.best_val_loss = float('inf')
+
+    def on_epoch_end(self, training_context: TrainingContext, train_results: ModelResultsAndLabels, val_results: ModelResultsAndLabels):
+        current_val_loss = val_results.model_results.loss
+        if current_val_loss < self.best_val_loss:
+            self.best_val_loss = current_val_loss
+            torch.save(training_context.model.state_dict(), self.save_path)
+            print(f"New best model found at epoch {training_context.current_epoch} with validation loss: {current_val_loss:.4f}. Model saved to {self.save_path}")
+
+
 class MetricsMetaInfo:
     def __init__(self, print_in_summary: bool = True, print_in_progress: bool = False, evaluate_per_epoch: bool = True, evaluate_per_batch: bool = False):
         self.evaluate_per_epoch = evaluate_per_epoch

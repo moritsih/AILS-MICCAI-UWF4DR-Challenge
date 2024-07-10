@@ -1,3 +1,5 @@
+import time
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -13,7 +15,9 @@ from torch.utils.data import DataLoader
 
 from ails_miccai_uwf4dr_challenge.config import WANDB_API_KEY
 
-from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Metric, MetricCalculatedHook, NumBatches, Trainer, EpochTrainingStrategy, EpochValidationStrategy, DefaultEpochTrainingStrategy, DefaultBatchTrainingStrategy, TrainingContext
+from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Metric, MetricCalculatedHook, \
+    NumBatches, Trainer, EpochTrainingStrategy, EpochValidationStrategy, DefaultEpochTrainingStrategy, \
+    DefaultBatchTrainingStrategy, TrainingContext, PersistBestModelOnEpochEndHook
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph_plain import AutoMorphModel
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
 
@@ -66,6 +70,11 @@ def train(config=None):
 
     trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device, 
                         metrics_eval_strategy=metrics_eval_strategy)
+
+    # build a file name for the model weights containing current timestamp and the model class
+    training_timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+    persist_model_hook = PersistBestModelOnEpochEndHook(f"best_model_{training_timestamp}.pth")
+    # trainer.add_epoch_end_hook(persist_model_hook) # TODO uncomment this line to save the best model
 
     #print("First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
     #trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
