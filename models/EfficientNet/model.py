@@ -7,7 +7,7 @@ from efficientnet_pytorch import EfficientNet
 
 class model:
     def __init__(self):
-        self.checkpoint = "automorph_best_loss_checkpoint.pth"
+        self.checkpoint = "best_model_2024-07-10_15-43-20.pth"
         # The model is evaluated using CPU, please do not change to GPU to avoid error reporting.
         self.device = torch.device("cpu")
 
