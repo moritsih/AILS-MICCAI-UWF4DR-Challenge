@@ -23,7 +23,7 @@ class model:
         :param dir_path: path to the submission directory (for internal use only).
         :return:
         """
-        self.model = AutoMorphModel()
+        self.model = Task1EfficientNetB4()
         # join paths
         checkpoint_path = os.path.join(dir_path, self.checkpoint)
         self.model.load_state_dict(torch.load(checkpoint_path, map_location=self.device))
@@ -66,4 +66,7 @@ class Task1EfficientNetB4(nn.Module):
         self.model = EfficientNet.from_pretrained('efficientnet-b4', num_classes=1)
 
         self.loss_fn = nn.BCEWithLogitsLoss()
+    
+    def forward(self, x):
+        return self.model(x)
 
