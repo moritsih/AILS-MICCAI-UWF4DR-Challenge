@@ -4,6 +4,9 @@ import zipfile
 import importlib.util
 import typer
 from datetime import datetime
+import numpy as np
+import torch
+import cv2
 
 app = typer.Typer()
 
@@ -89,6 +92,46 @@ class SubmissionBuilder:
             # If exists, copy the existing metadata file to the temp directory
             shutil.copy(metadata_file_path, temp_metadata_path)
 
+    @staticmethod
+    def create_random_image(height, width, channels):
+        """
+        Create a random image with the given dimensions.
+
+        Args:
+        height (int): Height of the image.
+        width (int): Width of the image.
+        channels (int): Number of channels in the image.
+
+        Returns:
+        ndarray: Randomly generated image.
+        """
+        return np.random.randint(0, 256, (height, width, channels), dtype=np.uint8)
+
+    def test_model_with_random_image(self, model_module, model_class, model_dir):
+        """
+        Test the model by running a prediction on a random image.
+
+        Args:
+        model_module: The model module loaded from the model file.
+        model_class: The model class.
+        model_dir: Directory of the model to load weights from.
+
+        Raises:
+        ValueError: If the model fails to make a prediction.
+        """
+        model_instance = model_class()
+        model_instance.load(model_dir)
+
+        # create a random image
+        random_image = self.create_random_image(800, 1016, 3)
+
+        # perform prediction
+        try:
+            prediction = model_instance.predict(random_image)
+            typer.echo(f"Prediction on random image: {prediction}")
+        except Exception as e:
+            raise ValueError(f"Model prediction failed: {e}")
+
     def create_submission_zip(self, model_dir: str, include_pth_files: bool = True):
         """
         Create a submission zip file for the CodaLab challenge.
@@ -116,6 +159,13 @@ class SubmissionBuilder:
                 if file.endswith(".pth"):
                     weights_file = os.path.join(model_dir, file)
                     shutil.copy(weights_file, os.path.join(temp_dir, os.path.basename(weights_file)))
+
+        # test model with random image
+        typer.echo("Testing instantiating the model and predict based on a random image...")
+        spec = importlib.util.spec_from_file_location("model", model_file)
+        model_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model_module)
+        self.test_model_with_random_image(model_module, model_module.model, model_dir)
 
         # create output directory if it doesn't exist
         os.makedirs(self.output_dir, exist_ok=True)
