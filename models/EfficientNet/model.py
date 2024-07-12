@@ -70,3 +70,9 @@ class Task1EfficientNetB4(nn.Module):
     def forward(self, x):
         return self.model(x)
 
+    def predict(self, x):
+        with torch.no_grad():
+            pred = torch.sigmoid(self(x))
+        return pred
+
+
