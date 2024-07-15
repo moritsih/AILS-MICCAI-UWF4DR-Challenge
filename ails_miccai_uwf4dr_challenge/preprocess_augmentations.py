@@ -96,13 +96,13 @@ preprocessing = A.Compose([
         MultiplyMask(p=1),
         CropBlackBorders(p=1),
         A.Resize(800, 1016, p=1),
-        A.Equalize(p=1),
+        #A.Equalize(p=1),
         A.CLAHE(clip_limit=5., p=1)
     ])
 
 augment_train = A.Compose([
         A.VerticalFlip(p=0.5),
-        A.HorizontalFlip(p=0.5),
+        #A.HorizontalFlip(p=0.5),
         #A.Affine(rotate=15, rotate_method='ellipse', p=0.5),
         ToTensorV2(p=1)
     ])

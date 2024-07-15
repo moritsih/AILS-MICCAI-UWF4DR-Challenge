@@ -343,7 +343,7 @@ class CustomDataset(Dataset):
         #img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) # DO NOT USE THIS LINE, JUST FOR CLARIFICATION
 
         if self.transform:
-            img = self.transform(img)
+            img = self.transform(image=img)['image']
 
         return img, label
     
