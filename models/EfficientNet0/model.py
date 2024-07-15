@@ -51,8 +51,6 @@ class model:
         :param input_image: the input image to the model.
         :return: a float value indicating the probability of class 1.
         """
-        input_image = cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB)
-
         # apply the same transformations as during validation
         transform = transforms.Compose([
             transforms.ToPILImage(),
