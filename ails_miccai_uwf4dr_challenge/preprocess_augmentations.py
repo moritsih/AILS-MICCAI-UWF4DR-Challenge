@@ -5,9 +5,11 @@ from pathlib import Path
 import numpy as np
 from albumentations.core.transforms_interface import ImageOnlyTransform
 import cv2
+import matplotlib.pyplot as plt
 
-# Load mask
-MASK = np.load(PROJ_ROOT / "preprocessing" / "mask.npy")
+ellipse = cv2.ellipse(np.zeros((800, 1016), dtype=np.uint8), (525, 400), (480, 380), 0, 0, 360, 1, -1) # ellipse mask made from hand-drawn mask
+MASK = np.array([ellipse, ellipse, ellipse], dtype=np.uint8).transpose(1, 2, 0)
+
 
 
 class ResidualGaussBlur(ImageOnlyTransform):
@@ -40,13 +42,13 @@ class MultiplyMask(ImageOnlyTransform):
     https://ieeexplore.ieee.org/document/9305690
 
     """
-    def __init__(self, safe_db_lists=[], p=1) -> None:
+    def __init__(self, p=1) -> None:
         super(MultiplyMask, self).__init__()
-        self.safe_db_lists = safe_db_lists
         self.p = p
 
         self.mask = MASK
-
+        self.cropper = lambda img: img[400-380:400+380, 525-480:525+480]
+        
     def apply(self, img, **params):
 
         if np.random.uniform(0, 1) > self.p:
@@ -56,48 +58,18 @@ class MultiplyMask(ImageOnlyTransform):
             img = img.transpose(1, 2, 0)
 
         img = img * self.mask
-        
-        return img
-    
-
-class CropBlackBorders(ImageOnlyTransform):
-    """
-    """
-    def __init__(self, p=1) -> None:
-        super(CropBlackBorders, self).__init__()
-        self.p = p
-
-    def apply(self, img, **params):
-
-        if np.random.uniform(0, 1) > self.p:
-            return img
-        
-        if img.shape[2] != 3:
-            img = img.transpose(1, 2, 0)
-
         img = self.cropper(img)
         
         return img
-    
-    def cropper(self, img):
-        gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
-        _,thresh = cv2.threshold(gray,1,255,cv2.THRESH_BINARY)
-        contours, _ = cv2.findContours(thresh,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
-        cnt = contours[0]
-        x,y,w,h = cv2.boundingRect(cnt)
-        crop = img[y:y+h,x:x+w]
-        
-        return crop
 
 
 preprocessing = A.Compose([
         A.Resize(800, 1016, p=1),
         ResidualGaussBlur(p=1),
         MultiplyMask(p=1),
-        CropBlackBorders(p=1),
         A.Resize(800, 1016, p=1),
-        #A.Equalize(p=1),
-        A.CLAHE(clip_limit=5., p=1)
+        #A.Equalize(p=0.1),
+        A.CLAHE(clip_limit=5., p=0.3)
     ])
 
 augment_train = A.Compose([
