@@ -11,7 +11,6 @@ ellipse = cv2.ellipse(np.zeros((800, 1016), dtype=np.uint8), (525, 400), (480, 3
 MASK = np.array([ellipse, ellipse, ellipse], dtype=np.uint8).transpose(1, 2, 0)
 
 
-
 class ResidualGaussBlur(ImageOnlyTransform):
     """
     """
