@@ -5,7 +5,7 @@ from pathlib import Path
 import torch.optim as optim
 
 class AutoMorphModel(nn.Module):
-    def __init__(self, pretrained=True):
+    def __init__(self, pretrained=True, enc_frozen=False):
         super(AutoMorphModel, self).__init__()
 
         # code taken from https://github.com/rmaphoh/AutoMorph/blob/main/M1_Retinal_Image_quality_EyePACS/model.py
@@ -27,6 +27,18 @@ class AutoMorphModel(nn.Module):
 
         # add a final layer that outputs single value
         self.model._fc.add_module("7", nn.Linear(3, 1))
+
+        if enc_frozen:
+            self.freeze_encoder()
+
+
+    def freeze_encoder(self):
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+        for param in self.model._fc.parameters():
+            param.requires_grad = True
+
 
     def forward(self, x):
         return self.model(x)
