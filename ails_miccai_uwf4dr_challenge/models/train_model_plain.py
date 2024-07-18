@@ -32,8 +32,8 @@ def train(config=None):
     train_dataset = CustomDataset(train_data, transform=rotate_affine_flip_choice)
     val_dataset = CustomDataset(val_data, transform=resize_only)
 
-    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=8)
+    val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False, num_workers=8)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu") #don't use mps, it takes ages, whyever that is the case!?!
     print(f"Using device: {device}")
@@ -99,6 +99,6 @@ if __name__ == "__main__":
         "model_type": Task1EfficientNetB4().__class__.__name__ 
     }
 
-    wandb.login(key=WANDB_API_KEY)
+    # wandb.login(key=WANDB_API_KEY)
 
     train(config)
