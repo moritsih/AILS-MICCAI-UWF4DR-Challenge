@@ -11,7 +11,7 @@ def remove_prefix(state_dict, prefix):
     return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
 class model:
     def __init__(self):
-        self.checkpoint = "Task1EfficientNetB0_best_weights_2024-07-12_13-15-26.pth"
+        self.checkpoint = "Task1EfficientNetB0_best_weights_2024-07-18_11-05-32.pth"
         # The model is evaluated using CPU, please do not change to GPU to avoid error reporting.
         self.device = torch.device("cpu")
         self.model = None
@@ -56,7 +56,8 @@ class model:
             transforms.ToPILImage(),
             transforms.Resize(size=(512, 512)),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            #transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) # RGB
+            transforms.Normalize(mean=[0.406, 0.456, 0.485], std=[0.225, 0.224, 0.229]) # BGR
         ])
 
         image = transform(input_image)
