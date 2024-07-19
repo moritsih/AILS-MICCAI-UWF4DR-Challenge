@@ -48,10 +48,10 @@ class model:
 
         with torch.no_grad():
             output = self.model(image)
-            prob = torch.softmax(output, dim=1).squeeze(0)
+            prob = torch.sigmoid(output).squeeze(0)
+        
 
-        class_1_prob = prob[1]
-        class_1_prob = class_1_prob.detach().cpu()
+        class_1_prob = prob.item()
 
         return float(class_1_prob)
 

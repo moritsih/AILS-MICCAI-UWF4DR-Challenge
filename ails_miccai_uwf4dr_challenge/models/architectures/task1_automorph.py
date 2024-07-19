@@ -30,7 +30,7 @@ class AutoMorphModel(L.LightningModule):
                 )
         model._fc = net_fl
 
-        checkpoint_path = Path().resolve() / "models" / "AutoMorph" / "automorph_best_loss_checkpoint.pth"
+        checkpoint_path = Path().resolve() / "models" / "AutoMorph_Task_1" / "automorph_best_loss_checkpoint.pth"
         model.load_state_dict(torch.load(checkpoint_path, map_location=self.device))
 
         # add a final layer that outputs single value
