@@ -6,6 +6,7 @@ import torch.optim as optim
 import wandb
 from sklearn.metrics import roc_auc_score, average_precision_score
 
+from ails_miccai_uwf4dr_challenge.models.architectures.task1_convnext import Task1ConvNeXt
 from ails_miccai_uwf4dr_challenge.models.metrics import sensitivity_score, specificity_score
 
 from ails_miccai_uwf4dr_challenge.dataset import ChallengeTaskType, CustomDataset, DatasetBuilder, DatasetOriginationType
@@ -42,6 +43,8 @@ def train(config=None):
         model = AutoMorphModel()
     elif config.model_type == 'Task1EfficientNetB4':
         model = Task1EfficientNetB4()
+    elif config.model_type == 'ConvNeXt':
+        model = Task1ConvNeXt()
     else:
         raise ValueError(f"Unknown model: {config.model_type}")
 
