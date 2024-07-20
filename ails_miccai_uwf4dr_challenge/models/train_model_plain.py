@@ -43,7 +43,7 @@ def train(config=None):
         model = AutoMorphModel()
     elif config.model_type == 'Task1EfficientNetB4':
         model = Task1EfficientNetB4()
-    elif config.model_type == 'ConvNeXt':
+    elif config.model_type == 'Task1ConvNeXt':
         model = Task1ConvNeXt()
     else:
         raise ValueError(f"Unknown model: {config.model_type}")
@@ -69,7 +69,7 @@ def train(config=None):
 
     criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.AdamW(model.parameters(), lr=config["learning_rate"])
-    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
+    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
     trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device, 
                         metrics_eval_strategy=metrics_eval_strategy)
@@ -99,7 +99,7 @@ if __name__ == "__main__":
         "dataset": "UWF4DR-DEEPDRID",
         "epochs": EPOCHS,
         "batch_size": 4,
-        "model_type": Task1EfficientNetB4().__class__.__name__ 
+        "model_type": Task1ConvNeXt().__class__.__name__ 
     }
 
     wandb.login(key=WANDB_API_KEY)
