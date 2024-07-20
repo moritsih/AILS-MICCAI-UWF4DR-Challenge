@@ -16,7 +16,7 @@ sweep_config = {
             "values": [4, 7, 9]
         },
         "model_type": {
-            "values": ["AutoMorphModel", "Task1EfficientNetB4"]
+            "values": ["AutoMorphModel", "Task1EfficientNetB4", "Task1ConvNeXt"]
         }
     }
 }

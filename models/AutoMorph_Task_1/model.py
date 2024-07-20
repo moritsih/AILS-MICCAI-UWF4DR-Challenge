@@ -7,7 +7,7 @@ from torchvision import transforms
 
 class model:
     def __init__(self):
-        self.checkpoint = "automorph_best_model_2024-07-16_18-04-41.pth"
+        self.checkpoint = "AutoMorphModel_refined_weights.pth"
         # The model is evaluated using CPU, please do not change to GPU to avoid error reporting.
         self.device = torch.device("cpu")
         self.model = None
@@ -51,7 +51,8 @@ class model:
             transforms.ToPILImage(),
             transforms.Resize(size=(800, 1016)),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) # RGB
+            transforms.Normalize(mean=[0.406, 0.456, 0.485], std=[0.225, 0.224, 0.229])  # BGR
         ])
 
         image = transform(input_image)
