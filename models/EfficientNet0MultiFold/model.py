@@ -1,3 +1,4 @@
+import torch.nn as nn
 import os
 import torch
 from efficientnet_pytorch import EfficientNet
@@ -5,6 +6,7 @@ from torchvision import transforms
 import cv2
 import numpy as np
 from skimage import restoration
+
 def remove_prefix(state_dict, prefix):
     """
     Remove the prefix from state_dict keys.
@@ -12,10 +14,15 @@ def remove_prefix(state_dict, prefix):
     return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
 class model:
     def __init__(self):
-        self.checkpoint = "Task1EfficientNetB0_best_weights_2024-07-23_08-48-22_devoted-jazz-719.pth"
-        # The model is evaluated using CPU, please do not change to GPU to avoid error reporting.
+        self.checkpoints = [
+            "EfficientNetB0_best_weights_fold1_2024-07-22_10-22-01.pth",
+            "EfficientNetB0_best_weights_fold2_2024-07-22_10-22-01.pth",
+            "EfficientNetB0_best_weights_fold3_2024-07-22_10-22-01.pth",
+            "EfficientNetB0_best_weights_fold4_2024-07-22_10-22-01.pth",
+            "EfficientNetB0_best_weights_fold5_2024-07-22_10-22-01.pth"
+        ]
         self.device = torch.device("cpu")
-        self.model = None
+        self.models = []
 
     def init(self):
         pass  # nothing to do here
@@ -29,17 +36,25 @@ class model:
         :param dir_path: path to the submission directory (for internal use only).
         :return:
         """
-        self.model = EfficientNet.from_pretrained('efficientnet-b0', num_classes=1)
-        # join paths
-        checkpoint_path = os.path.join(dir_path, self.checkpoint)
-
-        state_dict = torch.load(checkpoint_path, map_location=self.device)
-        state_dict = remove_prefix(state_dict, 'model.') # we need to remove the prefix as on training EfficientNet was wrapped
-
-        self.model.load_state_dict(state_dict)
-
-        self.model.to(self.device)
-        self.model.eval()
+        for checkpoint in self.checkpoints:
+            model = EfficientNet.from_pretrained('efficientnet-b0')
+            in_features = model._fc.in_features
+            model._fc = nn.Sequential(
+                nn.Linear(in_features, 512),
+                nn.ReLU(),
+                nn.Dropout(p=0.5),
+                nn.Linear(512, 64),
+                nn.ReLU(),
+                nn.Dropout(p=0.4),
+                nn.Linear(64, 1)
+            )
+            checkpoint_path = os.path.join(dir_path, checkpoint)
+            state_dict = torch.load(checkpoint_path, map_location=self.device)
+            state_dict = remove_prefix(state_dict, 'model.')  # Remove prefix as on training EfficientNet was wrapped
+            model.load_state_dict(state_dict)
+            model.to(self.device)
+            model.eval()
+            self.models.append(model)
 
     def predict(self, input_image):
         """
@@ -55,23 +70,26 @@ class model:
         # apply the same transformations as during validation
         transform = transforms.Compose([
             transforms.ToPILImage(),
-            transforms.ToTensor(),  # Convert to float32 tensor and scale
-            #GreenChannelEnhancement(),  # Apply Wiener filter and CLAHE
-            transforms.Resize(size=(400, 508)),
-            transforms.Normalize(mean=[0.406, 0.456, 0.485], std=[0.225, 0.224, 0.229])
+            transforms.ToTensor(),
+            GreenChannelEnhancement(),  # Apply Wiener filter and CLAHE
+            transforms.Resize(size=(448, 448)),
+            #transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) # RGB
+            #transforms.Normalize(mean=[0.406, 0.456, 0.485], std=[0.225, 0.224, 0.229]) # BGR
         ])
 
         image = transform(input_image)
         image = image.unsqueeze(0)  # Add batch dimension
         image = image.to(self.device)
 
+        # Aggregate predictions from all models
         with torch.no_grad():
-            output = self.model(image)
-            prob = torch.sigmoid(output).squeeze(0)  # Using sigmoid for binary classification
+            outputs = [torch.sigmoid(model(image)) for model in self.models]
+            avg_output = torch.mean(torch.stack(outputs), dim=0)
 
-        class_1_prob = prob.item()  # Convert to float
+        class_1_prob = avg_output.item()  # Convert to float
 
         return float(class_1_prob)
+
 
 class GreenChannelEnhancement:
     def __call__(self, img):

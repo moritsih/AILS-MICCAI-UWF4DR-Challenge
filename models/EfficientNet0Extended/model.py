@@ -1,3 +1,4 @@
+import torch.nn as nn
 import os
 import torch
 from efficientnet_pytorch import EfficientNet
@@ -5,6 +6,7 @@ from torchvision import transforms
 import cv2
 import numpy as np
 from skimage import restoration
+
 def remove_prefix(state_dict, prefix):
     """
     Remove the prefix from state_dict keys.
@@ -12,7 +14,7 @@ def remove_prefix(state_dict, prefix):
     return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
 class model:
     def __init__(self):
-        self.checkpoint = "Task1EfficientNetB0_best_weights_2024-07-23_08-48-22_devoted-jazz-719.pth"
+        self.checkpoint = "Task1EfficientNetB0Extended_best_weights_2024-07-23_06-36-29_twilight-monkey-714.pth"
         # The model is evaluated using CPU, please do not change to GPU to avoid error reporting.
         self.device = torch.device("cpu")
         self.model = None
@@ -29,7 +31,24 @@ class model:
         :param dir_path: path to the submission directory (for internal use only).
         :return:
         """
-        self.model = EfficientNet.from_pretrained('efficientnet-b0', num_classes=1)
+        self.model = EfficientNet.from_pretrained('efficientnet-b0')
+        # Determine the number of input features for the classifier
+        in_features = self.model._fc.in_features
+
+        # Replace the last layer with a custom classifier block
+        self.model._fc = nn.Sequential(
+            nn.Linear(in_features, 1024),
+            nn.ReLU(),
+            nn.Dropout(p=0.3),
+            nn.Linear(1024, 512),
+            nn.ReLU(),
+            nn.Dropout(p=0.2),
+            nn.Linear(512, 64),
+            nn.ReLU(),
+            # nn.Dropout(p=0.4),
+            nn.Linear(64, 1)
+        )
+
         # join paths
         checkpoint_path = os.path.join(dir_path, self.checkpoint)
 
@@ -55,10 +74,11 @@ class model:
         # apply the same transformations as during validation
         transform = transforms.Compose([
             transforms.ToPILImage(),
-            transforms.ToTensor(),  # Convert to float32 tensor and scale
+            transforms.ToTensor(),
             #GreenChannelEnhancement(),  # Apply Wiener filter and CLAHE
-            transforms.Resize(size=(400, 508)),
-            transforms.Normalize(mean=[0.406, 0.456, 0.485], std=[0.225, 0.224, 0.229])
+            transforms.Resize(size=(448, 448)),
+            #transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) # RGB
+            transforms.Normalize(mean=[0.406, 0.456, 0.485], std=[0.225, 0.224, 0.229]) # BGR
         ])
 
         image = transform(input_image)
@@ -72,6 +92,7 @@ class model:
         class_1_prob = prob.item()  # Convert to float
 
         return float(class_1_prob)
+
 
 class GreenChannelEnhancement:
     def __call__(self, img):
