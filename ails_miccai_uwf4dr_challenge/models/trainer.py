@@ -343,18 +343,18 @@ class DefaultBatchValidationStrategy(BatchValidationStrategy):
 
 class ResamplingStrategy(ABC):
     @abstractmethod
-    def apply(self, dataloader, epoch):
+    def apply(self, dataloader):
         pass
 
 
 class DefaultResamplingStrategy(ResamplingStrategy):
-    def apply(self, dataloader, epoch):
+    def apply(self, dataloader):
         # no resampling is applied by default
         return dataloader
     
 
 class OversamplingResamplingStrategy(ResamplingStrategy):
-    def apply(self, dataloader, epoch):
+    def apply(self, dataloader):
         # extract pandas df from dataloader
         unresampled_data = dataloader.dataset.data
 
@@ -375,7 +375,7 @@ class OversamplingResamplingStrategy(ResamplingStrategy):
     
     
 class UndersamplingResamplingStrategy(ResamplingStrategy):
-    def apply(self, dataloader, epoch):
+    def apply(self, dataloader):
 
         # extract pandas df from dataloader
         unresampled_data = dataloader.dataset.data
