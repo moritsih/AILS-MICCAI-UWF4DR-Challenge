@@ -19,6 +19,12 @@ class DatasetStrategy(ABC):
     def get_data(self):
         pass
 
+    def clean_data(self, data):
+        data['quality'] = data['quality'].astype("Int64")
+        data['dr'] = data['dr'].astype(float).round().astype("Int64")
+        data['dme'] = data['dme'].astype("Int64")
+        return data
+
 class OriginalDatasetStrategy(DatasetStrategy):
     def get_data(self):
         # Implementation from your original OriginalDataset class
@@ -47,7 +53,7 @@ class OriginalDatasetStrategy(DatasetStrategy):
         data['dr'] = data['dr'].apply(lambda x: int(x) if not np.isnan(x) else x).astype("Int64")
         data['dme'] = data['dme'].apply(lambda x: int(x) if not np.isnan(x) else x).astype("Int64")
 
-        return data
+        return self.clean_data(data)
 
 class DeepDridDatasetStrategy(DatasetStrategy):
     def get_data(self):
@@ -73,9 +79,9 @@ class DeepDridDatasetStrategy(DatasetStrategy):
 
         data['quality'] = None
         data = data.apply(self._make_quality_labels, axis=1)
-        data['dme'] = np.ones_like(data['dr']) * -1
+        data['dme'] = None
 
-        return data
+        return self.clean_data(data)
 
     def _standardize_label_df(self, row):
         try:
@@ -86,10 +92,8 @@ class DeepDridDatasetStrategy(DatasetStrategy):
             row['image_path'] = Path(row['image_id'])
         return row[['image_path', 'dr']]
 
-    def _translate_labels(self, label):
-        if label == 0:
-            return 0
-        elif label in [1, 2, 3, 4]:
+    def _translate_labels(self, label) -> int:
+        if label in [0, 1, 2, 3, 4]:
             return 1
         elif label == 5:
             return 5
@@ -105,15 +109,35 @@ class DeepDridDatasetStrategy(DatasetStrategy):
         else:
             raise ValueError(f"Invalid label in DeepDRiD dataset: {row['dr']}")
         return row
+    
+
+class CombinedDatasetStrategy(DatasetStrategy):
+    def get_data(self):
+        # Get data from both original strategies
+        original_strategy = OriginalDatasetStrategy()
+        deepdrid_strategy = DeepDridDatasetStrategy()
+        
+        original_data = original_strategy.get_data()
+        deepdrid_data = deepdrid_strategy.get_data()
+        
+        # Ensure both datasets have the same columns
+        columns_to_use = ['image', 'quality', 'dr', 'dme']
+        original_data = original_data[columns_to_use]
+        deepdrid_data = deepdrid_data[columns_to_use]
+        
+        # Combine the datasets
+        combined_data = pd.concat([original_data, deepdrid_data], ignore_index=True)
+        
+        # Reset index and drop any potential duplicates
+        combined_data = combined_data.reset_index(drop=True)
+        
+        return combined_data
+    
 
 class TaskStrategy(ABC):
     @abstractmethod
     def apply(self, data):
         pass
-
-class FullTaskStrategy(TaskStrategy):
-    def apply(self, data):
-        return data
 
 class Task1Strategy(TaskStrategy):
     def apply(self, data):
@@ -127,9 +151,15 @@ class Task2Strategy(TaskStrategy):
 
 class Task3Strategy(TaskStrategy):
     def apply(self, data):
-        data = data.dropna(subset=['dme'])
-        return data.drop(columns=['quality', 'dr']).reset_index(drop=True)
+        # Convert -1 values in the 'dme' column to NaN
+        data['dme'] = data['dme'].replace(-1, np.nan)
 
+        # Drop rows where 'dme' is NaN
+        data = data.dropna(subset=['dme'])
+
+        # Drop unnecessary columns and reset index
+        return data.drop(columns=['quality', 'dr']).reset_index(drop=True)
+    
 class SplitStrategy(ABC):
     @abstractmethod
     def split(self, data):
@@ -142,6 +172,7 @@ class TrainValSplitStrategy(SplitStrategy):
     def split(self, data):
         train_data, val_data = train_test_split(data, test_size=1-self.split_ratio, random_state=42, stratify=data.iloc[:, 1])
         return train_data, val_data
+    
 
 class ResamplingStrategy(ABC):
     @abstractmethod
@@ -152,9 +183,23 @@ class RandomOverSamplingStrategy(ResamplingStrategy):
     def apply(self, data):
         X = data.drop(columns=[data.columns[1]])
         y = data[data.columns[1]]
+        
+        assert len(X) == len(y)
+        assert len(y.unique()) > 1, "Resampling not needed for single class"
+
+        print("\nOriginal class distribution:")
+        print("Class 0:", (y == 0).sum())
+        print("Class 1:", (y == 1).sum())
+        print(y.value_counts(normalize=True))
+
         ros = RandomOverSampler(random_state=42)
         X_resampled, y_resampled = ros.fit_resample(X, y)
+
+        print("\nResampled class distribution:")
+        print(pd.Series(y_resampled).value_counts(normalize=True))
+
         return pd.concat([X_resampled, y_resampled], axis=1)
+    
 
 class DatasetBuilder:
     def __init__(self, dataset_strategy: DatasetStrategy, task_strategy: TaskStrategy, 
@@ -175,7 +220,6 @@ class CustomDataset(Dataset):
     def __init__(self, data, transform=None):
         self.transform = transform
         self.data = data
-        print("Dataset length: ", len(self.data))
         
     def __len__(self):
         return len(self.data)
@@ -190,9 +234,11 @@ class CustomDataset(Dataset):
         return img, label
 
 def main():
-    # Choose strategies
-    dataset_strategy = OriginalDatasetStrategy()  # or DeepDridDatasetStrategy()
-    task_strategy = Task1Strategy()  # or Task2Strategy() or Task3Strategy()
+
+    # Example: use combined dataset and task1
+    dataset_strategy = CombinedDatasetStrategy()
+    task_strategy = Task1Strategy()
+    
     split_strategy = TrainValSplitStrategy(split_ratio=0.8)
     resampling_strategy = RandomOverSamplingStrategy()
 
@@ -206,6 +252,7 @@ def main():
 
     print("Train dataset size:", len(train_dataset))
     print("Validation dataset size:", len(val_dataset))
+
 
 if __name__ == "__main__":
     main()

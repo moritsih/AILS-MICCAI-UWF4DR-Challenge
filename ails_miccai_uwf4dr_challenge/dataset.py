@@ -176,9 +176,7 @@ class DeepDridDataset:
         4: PDR
         5: Bad image quality/indiscernible
         '''
-        if label == 0:
-            return 0
-        elif label in [1, 2, 3, 4]:
+        if label in [0, 1, 2, 3, 4]:
             return 1
         elif label == 5:
             return 5
