@@ -1,10 +1,10 @@
 import os
 import torch
-from efficientnet_pytorch import EfficientNet
+from torchvision.models import efficientnet_v2_s
 from torchvision import transforms
-import cv2
-import numpy as np
-from skimage import restoration
+import torch.nn as nn
+from torchvision.transforms import v2
+
 def remove_prefix(state_dict, prefix):
     """
     Remove the prefix from state_dict keys.
@@ -12,7 +12,7 @@ def remove_prefix(state_dict, prefix):
     return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
 class model:
     def __init__(self):
-        self.checkpoint = "Task1EfficientNetB0_best_weights_2024-07-23_08-48-22_devoted-jazz-719.pth"
+        self.checkpoint = "EffNetV2_S_last_checkpoint.pth"
         # The model is evaluated using CPU, please do not change to GPU to avoid error reporting.
         self.device = torch.device("cpu")
         self.model = None
@@ -29,7 +29,21 @@ class model:
         :param dir_path: path to the submission directory (for internal use only).
         :return:
         """
-        self.model = EfficientNet.from_pretrained('efficientnet-b0', num_classes=1)
+        # Get the EfficientNetV2 model
+        self.model = efficientnet_v2_s(weights="IMAGENET1K_V1")
+
+        # Replace the entire classifier block
+        in_features = self.model.classifier[1].in_features
+        self.model.classifier = nn.Sequential(
+            nn.Linear(in_features, 512),
+            nn.ReLU(),
+            nn.Dropout(p=0.4),
+            nn.Linear(512, 64),
+            nn.ReLU(),
+            nn.Dropout(p=0.2),
+            nn.Linear(64, 1)
+        )
+
         # join paths
         checkpoint_path = os.path.join(dir_path, self.checkpoint)
 
@@ -54,11 +68,10 @@ class model:
         """
         # apply the same transformations as during validation
         transform = transforms.Compose([
-            transforms.ToPILImage(),
-            transforms.ToTensor(),  # Convert to float32 tensor and scale
-            #GreenChannelEnhancement(),  # Apply Wiener filter and CLAHE
-            transforms.Resize(size=(400, 508)),
-            transforms.Normalize(mean=[0.406, 0.456, 0.485], std=[0.225, 0.224, 0.229])
+            v2.ToPILImage(),
+            v2.ToImage(),
+            v2.ToDtype(torch.float32, scale=True),
+            GreenChannelEnhancement(),
         ])
 
         image = transform(input_image)
@@ -72,36 +85,3 @@ class model:
         class_1_prob = prob.item()  # Convert to float
 
         return float(class_1_prob)
-
-class GreenChannelEnhancement:
-    def __call__(self, img):
-        # Convert to numpy array if it's a tensor
-        if isinstance(img, torch.Tensor):
-            img = img.numpy().transpose((1, 2, 0))
-
-        # Ensure the image is in the correct format
-        img = img.astype(np.float32)
-
-        # Separate the channels
-        r, g, b = cv2.split(img)
-
-        # Apply Wiener filter to the green channel
-        psf = np.ones((5, 5)) / 25
-        g_filtered = restoration.wiener(g, psf, balance=0.1)
-
-        # Apply CLAHE to the filtered green channel
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        g_enhanced = clahe.apply((g_filtered * 255).astype(np.uint8))
-        g_enhanced = g_enhanced / 255.0  # Normalize back to range [0, 1]
-
-        # Ensure all channels are the same type
-        r = r.astype(np.float32)
-        g_enhanced = g_enhanced.astype(np.float32)
-        b = b.astype(np.float32)
-
-        # Merge the enhanced green channel back with the original red and blue channels
-        enhanced_img = cv2.merge((r, g_enhanced, b))
-
-        # Convert back to tensor
-        enhanced_img = torch.from_numpy(enhanced_img.transpose((2, 0, 1)))
-        return enhanced_img
