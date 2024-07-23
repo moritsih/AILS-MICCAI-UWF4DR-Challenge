@@ -22,6 +22,11 @@ FIGURES_DIR = REPORTS_DIR / "figures"
 
 WANDB_API_KEY = "e84f9aa9585ed75083b2923b94f68b05c287fe7e"
 
+class Config:
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
 # If tqdm is installed, configure loguru with tqdm.write
 # https://github.com/Delgan/loguru/issues/135
 try:
