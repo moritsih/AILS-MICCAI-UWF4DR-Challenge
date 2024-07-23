@@ -48,8 +48,6 @@ class GreenChannelEnhancement(ImageOnlyTransform):
         # Merge the enhanced green channel back with the original red and blue channels
         enhanced_img = cv2.merge((r, g_enhanced, b))
 
-        # Convert back to tensor
-        enhanced_img = torch.from_numpy(enhanced_img.transpose((2, 0, 1)))
         return enhanced_img
         
 
@@ -112,9 +110,12 @@ class MultiplyMask(ImageOnlyTransform):
 transforms_train = A.Compose([
     A.Resize(800, 1016, p=1),
     MultiplyMask(p=1),
+    A.OneOf([
+        GreenChannelEnhancement(p=.5),
+        A.CLAHE(clip_limit=5., p=.5)
+    ]),
     ResidualGaussBlur(p=3),
     A.Equalize(p=.1),
-    A.CLAHE(clip_limit=5., p=.3),
     A.HorizontalFlip(p=.3),
     A.Affine(rotate=15, rotate_method='ellipse', p=.3),
     A.Normalize(mean=[0.406, 0.485, 0.456], std=[0.225, 0.229, 0.224], p=1),
@@ -130,13 +131,13 @@ transforms_val = A.Compose([
 
 def main():
     from ails_miccai_uwf4dr_challenge.dataset_strategy import CustomDataset, DatasetStrategy, CombinedDatasetStrategy, \
-    Task1Strategy, Task2Strategy, Task3Strategy, TrainValSplitStrategy, RandomOverSamplingStrategy, DatasetBuilder
+    Task1Strategy, Task2Strategy, Task3Strategy, TrainValSplitStrategy, RandomOverSamplingStrategy, DatasetBuilder, NoResampling
 
     dataset_strategy = CombinedDatasetStrategy()
     task_strategy = Task2Strategy()
     
     split_strategy = TrainValSplitStrategy(split_ratio=0.8)
-    resampling_strategy = RandomOverSamplingStrategy()
+    resampling_strategy = NoResampling()
 
     builder = DatasetBuilder(dataset_strategy, task_strategy, split_strategy, resampling_strategy)
     train_data, val_data = builder.build()
@@ -146,7 +147,11 @@ def main():
 
     img, label = train_dataset[0]
 
-    plt.imshow(img.permute(1, 2, 0))
+    try:
+        plt.imshow(img.permute(1, 2, 0))
+    except:
+        plt.imshow(img)
+        
     plt.show()
 
 
