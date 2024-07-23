@@ -22,7 +22,7 @@ class AutoMorphModel(nn.Module):
         )
         self.model._fc = net_fl
         if pretrained:
-            checkpoint_path = Path().resolve() / "models" / "AutoMorph_Task_1" / "automorph_best_loss_checkpoint.pth"
+            checkpoint_path = Path().resolve() / "models" / "AutoMorph" / "automorph_best_loss_checkpoint.pth"
             self.model.load_state_dict(torch.load(checkpoint_path, map_location='cpu'))
 
         # add a final layer that outputs single value
