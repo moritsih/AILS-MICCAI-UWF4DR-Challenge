@@ -156,7 +156,7 @@ class CombinedDatasetStrategy(DatasetStrategy):
         combined_data = combined_data.reset_index(drop=True)
 
         # save csv
-        combined_data.to_csv(PROCESSED_DATA_DIR / 'combined_data.csv', index=False)
+        #combined_data.to_csv(PROCESSED_DATA_DIR / 'combined_data.csv', index=False)
         
         return combined_data
     
