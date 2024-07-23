@@ -243,11 +243,12 @@ class DatasetBuilder:
             data = self.resampling_strategy.apply(data)
         return self.split_strategy.split(data)
 
+
 class CustomDataset(Dataset):
     def __init__(self, data, transform=None):
         self.transform = transform
         self.data = data
-        
+
     def __len__(self):
         return len(self.data)
 
@@ -257,7 +258,7 @@ class CustomDataset(Dataset):
         label = torch.tensor(label, dtype=torch.float32).unsqueeze(0)
         img = cv2.imread(str(img_path))
         if self.transform:
-            img = self.transform(image=img)['image']
+            img = self.transform(img)
         return img, label
 
 def main():
