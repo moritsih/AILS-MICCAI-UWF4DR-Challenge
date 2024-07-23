@@ -159,6 +159,35 @@ class CombinedDatasetStrategy(DatasetStrategy):
         #combined_data.to_csv(PROCESSED_DATA_DIR / 'combined_data.csv', index=False)
         
         return combined_data
+
+
+class MiniDatasetStrategy(DatasetStrategy):
+    '''
+    This strategy may be used for checking if a model works at all. Overfit on few samples to check workability
+    '''
+    def get_data(self):
+        # Get data from both original strategies
+        original_strategy = OriginalDatasetStrategy()
+        deepdrid_strategy = DeepDridDatasetStrategy()
+        
+        original_data = original_strategy.get_data()
+        deepdrid_data = deepdrid_strategy.get_data()
+        
+        # Ensure both datasets have the same columns
+        columns_to_use = ['image', 'quality', 'dr', 'dme']
+        original_data = original_data[columns_to_use]
+        deepdrid_data = deepdrid_data[columns_to_use]
+        
+        # Combine the datasets
+        combined_data = pd.concat([original_data, deepdrid_data], ignore_index=True)
+        
+        # Reset index and drop any potential duplicates
+        combined_data = combined_data.reset_index(drop=True)
+
+        mini_data = combined_data.sample(frac=0.05, replace=False, random_state=42, axis=0)
+        
+        return mini_data
+        
     
 
 class TaskStrategy(ABC):
@@ -205,6 +234,10 @@ class ResamplingStrategy(ABC):
     @abstractmethod
     def apply(self, data):
         pass
+
+class NoResampling(ResamplingStrategy):
+    def apply(self, data):
+        return data
 
 class RandomOverSamplingStrategy(ResamplingStrategy):
     def apply(self, data):
