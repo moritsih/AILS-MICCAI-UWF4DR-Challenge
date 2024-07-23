@@ -205,7 +205,7 @@ class DefaultMetricsEvaluationStrategy(MetricsEvaluationStrategy):
         results = {}
 
         y_true = np.array(model_val_results.labels)
-        y_pred = np.array(model_val_results.model_results.outputs)
+        y_pred = self._sigmoid(np.array(model_val_results.model_results.outputs))
 
         for i, metric in enumerate(self.metrics):
             
@@ -238,6 +238,9 @@ class DefaultMetricsEvaluationStrategy(MetricsEvaluationStrategy):
         assert metric_calculated_hook is not None
         self.metric_calculated_hooks.append(metric_calculated_hook)
         return self
+
+    def _sigmoid(self, z):
+        return 1/(1 + np.exp(-z))
 
 class BatchTrainingStrategy(ABC):
     @abstractmethod
