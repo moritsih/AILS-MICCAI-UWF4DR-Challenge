@@ -10,6 +10,9 @@ from enum import Enum
 import time
 from contextlib import contextmanager
 
+from torch.utils.data import WeightedRandomSampler, DataLoader
+from collections import Counter
+
 class Timings(Enum):
     DATA_LOADING = "DATA_LOADING"
     FORWARD_PASS = "FORWARD_PASS"
@@ -286,6 +289,8 @@ class DefaultDataBatchExtractorStrategy(DataBatchExtractorStrategy):
         # Assuming identifiers are not provided by default, however, we strongly recommend providing identifiers for better debugging and analysis
         return None
 
+
+
 class DefaultBatchTrainingStrategy(BatchTrainingStrategy):
     def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy()):
         self.batch_extractor_strategy = batch_extractor_strategy
@@ -314,6 +319,7 @@ class DefaultBatchTrainingStrategy(BatchTrainingStrategy):
         
         return ModelResultsAndLabels(ModelResults(loss.item(), outputs, identifiers), labels)
 
+
 class DefaultBatchValidationStrategy(BatchValidationStrategy):
     def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy()):
         self.batch_extractor_strategy = batch_extractor_strategy
@@ -332,9 +338,69 @@ class DefaultBatchValidationStrategy(BatchValidationStrategy):
         
         return ModelResultsAndLabels(ModelResults(loss.item(), outputs, identifiers), labels)
 
+
+
+
+class ResamplingStrategy(ABC):
+    @abstractmethod
+    def apply(self, dataloader, epoch):
+        pass
+
+
+class DefaultResamplingStrategy(ResamplingStrategy):
+    def apply(self, dataloader, epoch):
+        # no resampling is applied by default
+        return dataloader
+    
+
+class OversamplingResamplingStrategy(ResamplingStrategy):
+    def apply(self, dataloader, epoch):
+        # extract pandas df from dataloader
+        unresampled_data = dataloader.dataset.data
+
+        # find the label column for grouping
+        label_col = unresampled_data.columns[-1]
+
+        # to undersample, sample without replacement until all classes have the number of samples of the majority class
+        class_counts = unresampled_data[label_col].value_counts()
+
+        min_class_count = class_counts.max()  # get the count of the majority class
+
+        resampled_data = unresampled_data.groupby(label_col).apply(lambda x: x.sample(min_class_count, replace=True)).reset_index(drop=True)
+
+        # create a new dataloader with the resampled data
+        dataloader.dataset.data = resampled_data
+
+        return dataloader
+    
+    
+class UndersamplingResamplingStrategy(ResamplingStrategy):
+    def apply(self, dataloader, epoch):
+
+        # extract pandas df from dataloader
+        unresampled_data = dataloader.dataset.data
+
+        # find the label column for grouping
+        label_col = unresampled_data.columns[-1]
+
+        # to undersample, sample without replacement until all classes have the number of samples of the minority class
+        class_counts = unresampled_data[label_col].value_counts()
+
+        min_class_count = class_counts.min()  # get the count of the minority class
+
+        resampled_data = unresampled_data.groupby(label_col).apply(lambda x: x.sample(min_class_count, replace=False)).reset_index(drop=True)
+
+        # create a new dataloader with the resampled data
+        dataloader.dataset.data = resampled_data
+
+        return dataloader
+
+
+
 class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
-    def __init__(self, batch_strategy=None):
+    def __init__(self, batch_strategy=None, resampling_strategy: ResamplingStrategy = None):
         self.batch_strategy = batch_strategy or DefaultBatchTrainingStrategy()
+        self.resampling_strategy = resampling_strategy or DefaultResamplingStrategy()
 
     def train(self, training_context: TrainingContext, train_loader) -> ModelResultsAndLabels:
         training_context.model.train()
@@ -342,6 +408,8 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
         total = 0
         avg_loss = inf
         results = ModelResultsAndLabels(ModelResults(avg_loss, [], None), [])
+
+        train_loader = self.resampling_strategy.apply(train_loader)
 
         with tqdm(train_loader) as pbar:
             pbar.set_description(f"{training_context.get_epoch_info()} - Starting training... ")
@@ -375,9 +443,12 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
         assert inputs.size(0) == labels.size(0), f"Batch size mismatch between inputs and labels : {inputs.size(0)} != {labels.size(0)}"
         return inputs.size(0)
 
+
+
 class DefaultEpochValidationStrategy(EpochValidationStrategy):
-    def __init__(self, batch_strategy=None):
+    def __init__(self, batch_strategy=None, resampling_strategy: ResamplingStrategy = None):
         self.batch_strategy = batch_strategy or DefaultBatchValidationStrategy()
+        self.resampling_strategy = resampling_strategy or DefaultResamplingStrategy()
 
     def validate(self, training_context: TrainingContext, val_loader):
         training_context.model.eval()
@@ -385,6 +456,8 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
         total = 0
         avg_loss = inf
         results = ModelResultsAndLabels(ModelResults(avg_loss, [], None), [])
+
+        val_loader = self.resampling_strategy.apply(val_loader)
 
         with torch.no_grad():
             with tqdm(val_loader) as pbar:
@@ -417,10 +490,17 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
         labels = self.batch_strategy.batch_extractor_strategy.get_labels(batch)
         assert inputs.size(0) == labels.size(0), f"Batch size mismatch between inputs and labels : {inputs.size(0)} != {labels.size(0)}"
         return inputs.size(0)
+    
 
 class Trainer:
-    def __init__(self, model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device=None, training_strategy: EpochTrainingStrategy=None, 
-            validation_strategy: EpochValidationStrategy=None, metrics_eval_strategy: DefaultMetricsEvaluationStrategy = None):
+    def __init__(self, model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device=None, 
+                 training_strategy: EpochTrainingStrategy=None, 
+                 validation_strategy: EpochValidationStrategy=None, 
+                 metrics_eval_strategy: DefaultMetricsEvaluationStrategy = None, 
+                 resampling_strategy: str = "default"):
+        
+        resampling_strategy = self.get_resampling_strategy(resampling_strategy)
+        
         assert model is not None
         self.model = model
         self.train_loader = train_loader
@@ -430,12 +510,24 @@ class Trainer:
         self.lr_scheduler = lr_scheduler
         self.device = device or next(model.parameters()).device
         self.timer = Timer()
-        self.training_strategy = training_strategy or DefaultEpochTrainingStrategy(DefaultBatchTrainingStrategy())
-        self.validation_strategy = validation_strategy or DefaultEpochValidationStrategy(DefaultBatchValidationStrategy())
+        self.training_strategy = training_strategy or DefaultEpochTrainingStrategy(DefaultBatchTrainingStrategy(),
+                                                                                   resampling_strategy=resampling_strategy)
+        self.validation_strategy = validation_strategy or DefaultEpochValidationStrategy(DefaultBatchValidationStrategy(),
+                                                                                         resampling_strategy=resampling_strategy)
         self.metrics_eval_strategy = metrics_eval_strategy or DefaultMetricsEvaluationStrategy([])
         self.epoch_end_hooks : List[EpochEndHook]= []
         self.epoch_train_end_hooks: List[EpochTrainEndHook] = []
         self.epoch_validation_end_hooks: List[EpochValidationEndHook] = []
+
+    def get_resampling_strategy(self, resampling_strategy: str):
+        if resampling_strategy.lower() == "oversampling":
+            return OversamplingResamplingStrategy()
+        elif resampling_strategy.lower() == "undersampling":
+            return UndersamplingResamplingStrategy()
+        elif resampling_strategy.lower() == "default" or resampling_strategy.lower() == "none":
+            return DefaultResamplingStrategy()
+        else:
+            raise ValueError(f"Unknown resampling strategy: {resampling_strategy}")
 
     def add_epoch_end_hook(self, hook: EpochEndHook) -> 'Trainer':
         self.epoch_end_hooks.append(hook)
