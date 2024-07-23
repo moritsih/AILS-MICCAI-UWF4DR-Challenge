@@ -139,7 +139,7 @@ class DeepDridDataset:
             row['quality'] = 0
             return row
         elif int(row['dr']) in [0, 1, 2, 3, 4]:
-            row['quality'] = 0
+            row['quality'] = 1
             return row
         else:
             raise ValueError(f"Invalid label in DeepDRiD dataset: {row['dr']}")
@@ -176,12 +176,14 @@ class DeepDridDataset:
         4: PDR
         5: Bad image quality/indiscernible
         '''
-        if label in [0, 1, 2, 3, 4]:
+        if label == 0:
+            return 0
+        elif label in [1, 2, 3, 4]:
             return 1
         elif label == 5:
             return 5
         else:            
-            raise ValueError("Invalid label in DeepDRiD dataset: {}".format(label))
+            raise ValueError(f"Invalid label in DeepDRiD dataset: {label}")
         
 
 class DatasetOriginationType(enum.Enum):

@@ -83,6 +83,7 @@ class DeepDridDatasetStrategy(DatasetStrategy):
 
         return self.clean_data(data)
 
+
     def _standardize_label_df(self, row):
         try:
             row['dr'] = row['DR_level']
@@ -92,8 +93,24 @@ class DeepDridDatasetStrategy(DatasetStrategy):
             row['image_path'] = Path(row['image_id'])
         return row[['image_path', 'dr']]
 
+
     def _translate_labels(self, label) -> int:
-        if label in [0, 1, 2, 3, 4]:
+        '''
+        In our challenge, labels for diabetic retinopathy are:
+        0: No DR
+        1: DR
+
+        In the DeepDRiD dataset, labels are:
+        0: No DR
+        1: Mild NPDR
+        2: Moderate NPDR
+        3: Severe NPDR
+        4: PDR
+        5: Bad image quality/indiscernible
+        '''
+        if label == 0:
+            return 0
+        elif label in [1, 2, 3, 4]:
             return 1
         elif label == 5:
             return 5
@@ -101,11 +118,18 @@ class DeepDridDatasetStrategy(DatasetStrategy):
             raise ValueError(f"Invalid label in DeepDRiD dataset: {label}")
 
     def _make_quality_labels(self, row):
+        '''
+        When the 'dr' label in DeepDRiD is 5, the image quality is bad.
+        Thus we add a new column "quality" that reflects our knowledge about image quality:
+        0: Bad image quality
+        1: Good image quality
+        '''
+
         if int(row['dr']) == 5:
             row['dr'] = np.nan
             row['quality'] = 0
         elif int(row['dr']) in [0, 1, 2, 3, 4]:
-            row['quality'] = 0
+            row['quality'] = 1
         else:
             raise ValueError(f"Invalid label in DeepDRiD dataset: {row['dr']}")
         return row
@@ -130,6 +154,9 @@ class CombinedDatasetStrategy(DatasetStrategy):
         
         # Reset index and drop any potential duplicates
         combined_data = combined_data.reset_index(drop=True)
+
+        # save csv
+        combined_data.to_csv(PROCESSED_DATA_DIR / 'combined_data.csv', index=False)
         
         return combined_data
     
