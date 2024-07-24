@@ -1,21 +1,24 @@
+import torch
+import torch.nn as nn
+import warnings
+import enum
 import os
 import cv2
 import numpy as np
-import torch
-from torch import nn
-from efficientnet_pytorch import EfficientNet
 import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
 from albumentations.core.transforms_interface import ImageOnlyTransform
+warnings.filterwarnings("ignore")
 
 
 class model:
     def __init__(self):
-        self.checkpoint = "automorph_alldata_combinedloss_encfrozen.pth"
+        
+        self.checkpoint: str = None
+
         # The model is evaluated using CPU, please do not change to GPU to avoid error reporting.
         self.device = torch.device("cpu")
         self.model = None
-
 
     def load(self, dir_path):
         """
@@ -26,12 +29,11 @@ class model:
         :param dir_path: path to the submission directory (for internal use only).
         :return:
         """
-        self.model = build_automorph_model()
+        self.model = DinoV2Classifier(size=ModelSize.SMALL)
         # join paths
         checkpoint_path = os.path.join(dir_path, self.checkpoint)
 
         state_dict = torch.load(checkpoint_path, map_location=self.device)
-        state_dict = remove_prefix_in_state_dict(state_dict,'model.')  # we need to remove the prefix as on training EfficientNet was wrapped
 
         self.model.load_state_dict(state_dict)
         self.model.to(self.device)
@@ -70,23 +72,65 @@ class model:
         return float(class_1_prob)
 
 
-def build_automorph_model():
-    # code taken from https://github.com/rmaphoh/AutoMorph/blob/main/M1_Retinal_Image_quality_EyePACS/model.py
-    model = EfficientNet.from_pretrained('efficientnet-b4')
-    model._fc = nn.Identity()
-    net_fl = nn.Sequential(
-        nn.Linear(1792, 256),
-        nn.ReLU(),
-        nn.Dropout(p=0.5),
-        nn.Linear(256, 64),
-        nn.ReLU(),
-        nn.Dropout(p=0.5),
-        nn.Linear(64, 3)
-    )
-    model._fc = net_fl
-    # add a final layer that outputs single value
-    model._fc.add_module("7", nn.Linear(3, 1))
-    return model
+class ModelSize(enum.Enum):
+    SMALL = 'small'
+    BASE = 'base'
+
+class DinoV2Classifier(nn.Module):
+    def __init__(self, size: ModelSize = ModelSize.SMALL):
+        super(DinoV2Classifier, self).__init__()
+
+        if size == ModelSize.SMALL:
+            self.model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14_reg_lc')
+        elif size == ModelSize.BASE:
+            self.model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14_reg_lc')
+        else:
+            raise ValueError(f"Invalid model size: {size}")
+
+        head_in = self.model.linear_head.in_features
+        head_out = self.model.linear_head.out_features
+        
+        classifier = nn.Sequential(
+                                nn.Linear(head_in, head_out),
+                                nn.ReLU(),
+                                nn.Dropout(p=0.5),
+                                nn.Linear(1000, 256),
+                                nn.ReLU(),
+                                nn.Dropout(p=0.5),
+                                nn.Linear(256, 64), 
+                                nn.ReLU(),
+                                nn.Dropout(p=0.5),
+                                nn.Linear(64, 1)
+                                )
+        
+        self.model.linear_head = classifier
+
+    def forward(self, x):
+        return self.model(x)
+
+    def predict(self, input_image):
+
+        # apply the same transformations as during validation
+        transform = A.Compose([
+            A.Resize(800, 1016, p=1),
+            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], p=1),
+            MultiplyMask(p=1),
+            A.Resize(800, 1016, p=1),
+            ToTensorV2(p=1)
+        ])
+
+        image = transform(image=input_image)['image']
+        image = image.unsqueeze(0)  # Add batch dimension
+        image = image.to(self.device)
+
+        with torch.no_grad():
+            output = self.model(image)
+            prob = torch.sigmoid(output).squeeze(0)  # Using sigmoid for binary classification
+
+        class_1_prob = prob.item()  # Convert to float
+
+        return float(class_1_prob)
+
 
 ellipse = cv2.ellipse(np.zeros((800, 1016), dtype=np.uint8), (525, 400), (480, 380), 0, 0, 360, 1, -1) # ellipse mask made from hand-drawn mask
 MASK = np.array([ellipse, ellipse, ellipse], dtype=np.uint8).transpose(1, 2, 0)
@@ -123,8 +167,10 @@ class MultiplyMask(ImageOnlyTransform):
         return img
 
 
-def remove_prefix_in_state_dict(state_dict, prefix):
-    """
-    Remove the prefix from state_dict keys.
-    """
-    return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
+if __name__ == '__main__':
+    model = DinoV2Classifier(size=ModelSize.SMALL)
+
+    input = torch.randn(1, 3, 224, 224)
+    output = model.predict(input)
+
+    print(output)

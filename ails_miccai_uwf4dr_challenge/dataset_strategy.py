@@ -6,9 +6,8 @@ import cv2
 from ails_miccai_uwf4dr_challenge.config import PROCESSED_DATA_DIR, RAW_DATA_DIR, EXTERNAL_DATA_DIR
 from sklearn.model_selection import train_test_split
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, WeightedRandomSampler
 from abc import ABC, abstractmethod
-from imblearn.over_sampling import RandomOverSampler
 
 # add seeds
 torch.manual_seed(42)
@@ -159,6 +158,35 @@ class CombinedDatasetStrategy(DatasetStrategy):
         #combined_data.to_csv(PROCESSED_DATA_DIR / 'combined_data.csv', index=False)
         
         return combined_data
+
+
+class MiniDatasetStrategy(DatasetStrategy):
+    '''
+    This strategy may be used for checking if a model works at all. Overfit on few samples to check workability
+    '''
+    def get_data(self):
+        # Get data from both original strategies
+        original_strategy = OriginalDatasetStrategy()
+        deepdrid_strategy = DeepDridDatasetStrategy()
+        
+        original_data = original_strategy.get_data()
+        deepdrid_data = deepdrid_strategy.get_data()
+        
+        # Ensure both datasets have the same columns
+        columns_to_use = ['image', 'quality', 'dr', 'dme']
+        original_data = original_data[columns_to_use]
+        deepdrid_data = deepdrid_data[columns_to_use]
+        
+        # Combine the datasets
+        combined_data = pd.concat([original_data, deepdrid_data], ignore_index=True)
+        
+        # Reset index and drop any potential duplicates
+        combined_data = combined_data.reset_index(drop=True)
+
+        mini_data = combined_data.sample(frac=0.05, replace=False, random_state=42, axis=0)
+        
+        return mini_data
+        
     
 
 class TaskStrategy(ABC):
@@ -187,61 +215,20 @@ class Task3Strategy(TaskStrategy):
         # Drop unnecessary columns and reset index
         return data.drop(columns=['quality', 'dr']).reset_index(drop=True)
     
-class SplitStrategy(ABC):
-    @abstractmethod
-    def split(self, data):
-        pass
 
-class TrainValSplitStrategy(SplitStrategy):
-    def __init__(self, split_ratio=0.8):
-        self.split_ratio = split_ratio
-    
-    def split(self, data):
-        train_data, val_data = train_test_split(data, test_size=1-self.split_ratio, random_state=42, stratify=data.iloc[:, 1])
-        return train_data, val_data
-    
-
-class ResamplingStrategy(ABC):
-    @abstractmethod
-    def apply(self, data):
-        pass
-
-class RandomOverSamplingStrategy(ResamplingStrategy):
-    def apply(self, data):
-        X = data.drop(columns=[data.columns[1]])
-        y = data[data.columns[1]]
-        
-        assert len(X) == len(y)
-        assert len(y.unique()) > 1, "Resampling not needed for single class"
-
-        print("\nOriginal class distribution:")
-        print("Class 0:", (y == 0).sum())
-        print("Class 1:", (y == 1).sum())
-        print(y.value_counts(normalize=True))
-
-        ros = RandomOverSampler(random_state=42)
-        X_resampled, y_resampled = ros.fit_resample(X, y)
-
-        print("\nResampled class distribution:")
-        print(pd.Series(y_resampled).value_counts(normalize=True))
-
-        return pd.concat([X_resampled, y_resampled], axis=1)
-    
 
 class DatasetBuilder:
-    def __init__(self, dataset_strategy: DatasetStrategy, task_strategy: TaskStrategy, 
-                 split_strategy: SplitStrategy, resampling_strategy: ResamplingStrategy = None):
+    def __init__(self, dataset_strategy: DatasetStrategy, 
+                 task_strategy: TaskStrategy, split_ratio: float = 0.8):
         self.dataset_strategy = dataset_strategy
         self.task_strategy = task_strategy
-        self.split_strategy = split_strategy
-        self.resampling_strategy = resampling_strategy
+        self.split_ratio = split_ratio
         
     def build(self):
         data = self.dataset_strategy.get_data()
         data = self.task_strategy.apply(data)
-        if self.resampling_strategy:
-            data = self.resampling_strategy.apply(data)
-        return self.split_strategy.split(data)
+        train_data, val_data = train_test_split(data, test_size=1-self.split_ratio, random_state=42, stratify=data.iloc[:, 1])
+        return train_data, val_data
 
 class CustomDataset(Dataset):
     def __init__(self, data, transform=None):
@@ -265,12 +252,9 @@ def main():
     # Example: use combined dataset and task1
     dataset_strategy = CombinedDatasetStrategy()
     task_strategy = Task1Strategy()
-    
-    split_strategy = TrainValSplitStrategy(split_ratio=0.8)
-    resampling_strategy = RandomOverSamplingStrategy()
 
     # Build dataset
-    builder = DatasetBuilder(dataset_strategy, task_strategy, split_strategy, resampling_strategy)
+    builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0.8)
     train_data, val_data = builder.build()
 
     # Create PyTorch datasets

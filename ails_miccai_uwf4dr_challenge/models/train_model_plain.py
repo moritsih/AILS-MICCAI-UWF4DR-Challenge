@@ -9,9 +9,15 @@ from sklearn.metrics import roc_auc_score, average_precision_score
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_convnext import Task1ConvNeXt
 from ails_miccai_uwf4dr_challenge.models.metrics import sensitivity_score, specificity_score
 
-from ails_miccai_uwf4dr_challenge.dataset import ChallengeTaskType, CustomDataset, DatasetBuilder, DatasetOriginationType
-from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice, resize_only
+# data
+from ails_miccai_uwf4dr_challenge.dataset_strategy import CustomDataset, DatasetStrategy, CombinedDatasetStrategy, \
+    Task1Strategy, Task2Strategy, Task3Strategy, DatasetBuilder
 from torch.utils.data import DataLoader
+
+# augmentation
+import albumentations as A
+from albumentations.pytorch.transforms import ToTensorV2
+from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice, resize_only
 
 
 from ails_miccai_uwf4dr_challenge.config import WANDB_API_KEY
@@ -27,14 +33,17 @@ def train(config=None):
     wandb.init(project="task1", config=config)
     config = wandb.config
 
-    dataset = DatasetBuilder(dataset=DatasetOriginationType.ALL, task=ChallengeTaskType.TASK1)
-    train_data, val_data = dataset.get_train_val()
+    dataset_strategy = CombinedDatasetStrategy()
+    task_strategy = Task2Strategy()
+
+    builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0.8)
+    train_data, val_data = builder.build()
 
     train_dataset = CustomDataset(train_data, transform=rotate_affine_flip_choice)
     val_dataset = CustomDataset(val_data, transform=resize_only)
 
-    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu") #don't use mps, it takes ages, whyever that is the case!?!
     print(f"Using device: {device}")
@@ -72,7 +81,9 @@ def train(config=None):
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
     trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device, 
-                        metrics_eval_strategy=metrics_eval_strategy)
+                        metrics_eval_strategy=metrics_eval_strategy, resampling_strategy='undersampling')
+    
+    # new: resampling strategy: undersampling, oversampling, or default (no resampling)
 
     # build a file name for the model weights containing current timestamp and the model class
     training_timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")

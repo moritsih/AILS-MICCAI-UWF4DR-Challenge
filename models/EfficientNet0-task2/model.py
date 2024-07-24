@@ -15,7 +15,7 @@ def remove_prefix(state_dict, prefix):
     return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
 class model:
     def __init__(self):
-        self.checkpoint = "best_model_2024-07-22_14-36-05_submit.pth"
+        self.checkpoint = "earthly_sweep.pth"
         # The model is evaluated using CPU, please do not change to GPU to avoid error reporting.
         self.device = torch.device("cpu")
         self.model = None
