@@ -86,8 +86,9 @@ def train(config=None):
     # new: resampling strategy: undersampling, oversampling, or default (no resampling)
 
     # build a file name for the model weights containing current timestamp and the model class
-    training_timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
-    persist_model_hook = PersistBestModelOnEpochEndHook(f"{config.model_type}_best_model_{training_timestamp}.pth")
+    training_date = time.strftime("%Y-%m-%d")
+    weight_file_name = f"{config.model_type}_weights_{training_date}_{wandb.run.name}.pth"
+    persist_model_hook = PersistBestModelOnEpochEndHook(weight_file_name, print_train_results=True)
     trainer.add_epoch_end_hook(persist_model_hook)
 
     #print("First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")

@@ -139,30 +139,39 @@ class EpochValidationEndHook(ABC):
     def on_epoch_validation_end(self, training_context: TrainingContext, val_results: ModelResultsAndLabels):
         pass
 
-class DefaultEpochEndHook(EpochEndHook):
-    def on_epoch_end(self, training_context: TrainingContext, train_results: ModelResultsAndLabels, val_results: ModelResultsAndLabels):
+
+class _EpochTrainResultPrinter:  # internal class for print training results on epoch end
+    def print_train_val_result(self, training_context: TrainingContext, train_results: ModelResultsAndLabels, val_results: ModelResultsAndLabels):
         curr_lr = training_context.optimizer.param_groups[0]['lr']
         metrics_to_print = training_context.get_current_epoch_metrics()
 
-        metrics_str = ', '.join([f'{metric_name}: {metric_value:.4f}' for metric_name, metric_value in metrics_to_print.items()])
+        metrics_str = ', '.join(
+            [f'{metric_name}: {metric_value:.4f}' for metric_name, metric_value in metrics_to_print.items()])
 
         print(training_context.get_epoch_info() + " Summary : " +
               f'Train Loss: {train_results.model_results.loss:.4f}, Val Loss: {val_results.model_results.loss:.4f}, LR: {curr_lr:.2e}, ' +
               metrics_str)
 
+class DefaultEpochEndHook(EpochEndHook):
+    def on_epoch_end(self, training_context: TrainingContext, train_results: ModelResultsAndLabels, val_results: ModelResultsAndLabels):
+        _EpochTrainResultPrinter().print_train_val_result(training_context, train_results, val_results)
+
 
 class PersistBestModelOnEpochEndHook(EpochEndHook):
-    def __init__(self, save_path):
+    def __init__(self, save_path, print_train_results: bool = False):
         self.save_path = save_path
         self.best_val_loss = float('inf')
+        self.print_train_results = print_train_results
 
     def on_epoch_end(self, training_context: TrainingContext, train_results: ModelResultsAndLabels, val_results: ModelResultsAndLabels):
         current_val_loss = val_results.model_results.loss
         if current_val_loss < self.best_val_loss:
             self.best_val_loss = current_val_loss
             torch.save(training_context.model.state_dict(), self.save_path)
-            print(f"New best model found at epoch {training_context.current_epoch} with validation loss: {current_val_loss:.4f}. Model saved to {self.save_path}")
+            print(f"New best weights found at epoch {training_context.current_epoch} with validation loss: {current_val_loss:.4f}. Model saved to {self.save_path}")
 
+        if self.print_train_results:
+            _EpochTrainResultPrinter().print_train_val_result(training_context, train_results, val_results)
 
 class MetricsMetaInfo:
     def __init__(self, print_in_summary: bool = True, print_in_progress: bool = False, evaluate_per_epoch: bool = True, evaluate_per_batch: bool = False):

@@ -1,21 +1,19 @@
 import os
-import cv2
-import numpy as np
 import torch
 from torch import nn
 from efficientnet_pytorch import EfficientNet
-import albumentations as A
-from albumentations.pytorch.transforms import ToTensorV2
-from albumentations.core.transforms_interface import ImageOnlyTransform
+from torchvision import transforms
 
 
 class model:
     def __init__(self):
-        self.checkpoint = "automorph_alldata_combinedloss_encfrozen.pth"
+        self.checkpoint = "#checkpoint_file_path#"  # The checkpoint file path will be replaced in the copied model file - see SubmissionBuilder#CHECK_POINT_FILE_PATH_PLACEHOLDER
         # The model is evaluated using CPU, please do not change to GPU to avoid error reporting.
         self.device = torch.device("cpu")
         self.model = None
 
+    def init(self):
+        pass  # nothing to do here
 
     def load(self, dir_path):
         """
@@ -49,15 +47,15 @@ class model:
         :return: a float value indicating the probability of class 1.
         """
         # apply the same transformations as during validation
-        transform = A.Compose([
-            A.Resize(800, 1016, p=1),
-            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], p=1),
-            MultiplyMask(p=1),
-            A.Resize(800, 1016, p=1),
-            ToTensorV2(p=1)
+        transform = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Resize(size=(800, 1016)),
+            transforms.ToTensor(),
+            # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) # RGB
+            transforms.Normalize(mean=[0.406, 0.456, 0.485], std=[0.225, 0.224, 0.229])  # BGR
         ])
 
-        image = transform(image=input_image)['image']
+        image = transform(input_image)
         image = image.unsqueeze(0)  # Add batch dimension
         image = image.to(self.device)
 
@@ -68,7 +66,6 @@ class model:
         class_1_prob = prob.item()  # Convert to float
 
         return float(class_1_prob)
-
 
 def build_automorph_model():
     # code taken from https://github.com/rmaphoh/AutoMorph/blob/main/M1_Retinal_Image_quality_EyePACS/model.py
@@ -87,40 +84,6 @@ def build_automorph_model():
     # add a final layer that outputs single value
     model._fc.add_module("7", nn.Linear(3, 1))
     return model
-
-ellipse = cv2.ellipse(np.zeros((800, 1016), dtype=np.uint8), (525, 400), (480, 380), 0, 0, 360, 1, -1) # ellipse mask made from hand-drawn mask
-MASK = np.array([ellipse, ellipse, ellipse], dtype=np.uint8).transpose(1, 2, 0)
-
-class MultiplyMask(ImageOnlyTransform):
-    """
-    Masks out the portion of UWF images that is !!ON AVERAGE!! covered by the device (and thus is noise).
-    Research has shown that this can improve the performance of the model.
-
-    https://www.sciencedirect.com/science/article/pii/S0010482523002159?via%3Dihub#fig2
-    &
-    https://ieeexplore.ieee.org/document/9305690
-
-    """
-
-    def __init__(self, p=1) -> None:
-        super(MultiplyMask, self).__init__()
-        self.p = p
-
-        self.mask = MASK
-        self.cropper = lambda img: img[400 - 380:400 + 380, 525 - 480:525 + 480]
-
-    def apply(self, img, **params):
-
-        if np.random.uniform(0, 1) > self.p:
-            return img
-
-        if img.shape[2] != 3:
-            img = img.transpose(1, 2, 0)
-
-        img = img * self.mask
-        img = self.cropper(img)
-
-        return img
 
 
 def remove_prefix_in_state_dict(state_dict, prefix):
