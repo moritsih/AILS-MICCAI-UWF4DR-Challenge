@@ -10,9 +10,6 @@ from enum import Enum
 import time
 from contextlib import contextmanager
 
-from torch.utils.data import WeightedRandomSampler, DataLoader
-from collections import Counter
-
 class Timings(Enum):
     DATA_LOADING = "DATA_LOADING"
     FORWARD_PASS = "FORWARD_PASS"

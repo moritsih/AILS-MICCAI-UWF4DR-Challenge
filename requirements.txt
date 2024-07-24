@@ -17,7 +17,6 @@ torch
 torchvision
 opencv-python
 efficientnet-pytorch
-imbalanced-learn
 wandb
 monai
 lightning
