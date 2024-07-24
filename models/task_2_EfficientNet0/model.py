@@ -1,9 +1,12 @@
 import os
 import torch
-from torchvision.models import efficientnet_v2_s
+from efficientnet_pytorch import EfficientNet
 from torchvision import transforms
-import torch.nn as nn
-from torchvision.transforms import v2
+import cv2
+import numpy as np
+from albumentations.core.transforms_interface import ImageOnlyTransform
+import albumentations as A
+from albumentations.pytorch.transforms import ToTensorV2
 
 def remove_prefix(state_dict, prefix):
     """
@@ -12,7 +15,7 @@ def remove_prefix(state_dict, prefix):
     return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
 class model:
     def __init__(self):
-        self.checkpoint = "EffNetV2_S_last_checkpoint.pth"
+        self.checkpoint = "#checkpoint_file_path#"  # The checkpoint file path will be replaced in the copied model file - see SubmissionBuilder#CHECK_POINT_FILE_PATH_PLACEHOLDER
         # The model is evaluated using CPU, please do not change to GPU to avoid error reporting.
         self.device = torch.device("cpu")
         self.model = None
@@ -29,21 +32,7 @@ class model:
         :param dir_path: path to the submission directory (for internal use only).
         :return:
         """
-        # Get the EfficientNetV2 model
-        self.model = efficientnet_v2_s(weights="IMAGENET1K_V1")
-
-        # Replace the entire classifier block
-        in_features = self.model.classifier[1].in_features
-        self.model.classifier = nn.Sequential(
-            nn.Linear(in_features, 512),
-            nn.ReLU(),
-            nn.Dropout(p=0.4),
-            nn.Linear(512, 64),
-            nn.ReLU(),
-            nn.Dropout(p=0.2),
-            nn.Linear(64, 1)
-        )
-
+        self.model = EfficientNet.from_pretrained('efficientnet-b0', num_classes=1)
         # join paths
         checkpoint_path = os.path.join(dir_path, self.checkpoint)
 
@@ -67,14 +56,14 @@ class model:
         :return: a float value indicating the probability of class 1.
         """
         # apply the same transformations as during validation
-        transform = transforms.Compose([
-            v2.ToPILImage(),
-            v2.ToImage(),
-            v2.ToDtype(torch.float32, scale=True),
-            GreenChannelEnhancement(),
+        transform = A.Compose([
+            A.Resize(800, 1016, p=1),
+            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], p=1),
+            MultiplyMask(p=1),
+            ToTensorV2(p=1)
         ])
-
-        image = transform(input_image)
+        
+        image = transform(image=input_image)['image']
         image = image.unsqueeze(0)  # Add batch dimension
         image = image.to(self.device)
 
@@ -85,3 +74,47 @@ class model:
         class_1_prob = prob.item()  # Convert to float
 
         return float(class_1_prob)
+
+
+
+ellipse = cv2.ellipse(np.zeros((800, 1016), dtype=np.uint8), (525, 400), (480, 380), 0, 0, 360, 1, -1) # ellipse mask made from hand-drawn mask
+MASK = np.array([ellipse, ellipse, ellipse], dtype=np.uint8).transpose(1, 2, 0)
+
+
+class MultiplyMask(ImageOnlyTransform):
+    """
+    Masks out the portion of UWF images that is !!ON AVERAGE!! covered by the device (and thus is noise).
+    Research has shown that this can improve the performance of the model.
+
+    https://www.sciencedirect.com/science/article/pii/S0010482523002159?via%3Dihub#fig2
+    &
+    https://ieeexplore.ieee.org/document/9305690
+
+    """
+
+    def __init__(self, p=1) -> None:
+        super(MultiplyMask, self).__init__()
+        self.p = p
+
+        self.mask = MASK
+        self.cropper = lambda img: img[400 - 380:400 + 380, 525 - 480:525 + 480]
+
+    def apply(self, img, **params):
+
+        if np.random.uniform(0, 1) > self.p:
+            return img
+
+        if img.shape[2] != 3:
+            img = img.transpose(1, 2, 0)
+
+        img = img * self.mask
+        img = self.cropper(img)
+
+        return img
+
+
+def remove_prefix_in_state_dict(state_dict, prefix):
+    """
+    Remove the prefix from state_dict keys.
+    """
+    return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}

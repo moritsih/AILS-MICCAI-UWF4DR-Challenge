@@ -12,7 +12,7 @@ from albumentations.core.transforms_interface import ImageOnlyTransform
 
 class model:
     def __init__(self):
-        self.checkpoint = "automorph_alldata_combinedloss_encfrozen.pth"
+        self.checkpoint = "#checkpoint_file_path#"  # The checkpoint file path will be replaced in the copied model file - see SubmissionBuilder#CHECK_POINT_FILE_PATH_PLACEHOLDER
         # The model is evaluated using CPU, please do not change to GPU to avoid error reporting.
         self.device = torch.device("cpu")
         self.model = None
