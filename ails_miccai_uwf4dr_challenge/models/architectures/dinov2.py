@@ -40,8 +40,6 @@ class DinoV2Classifier(nn.Module):
         
         self.model.linear_head = classifier
 
-        print(self.model)
-
     def forward(self, x):
         return self.model(x)
 
