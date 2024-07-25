@@ -71,7 +71,6 @@ class model:
             v2.ToPILImage(),
             v2.ToImage(),
             v2.ToDtype(torch.float32, scale=True),
-            GreenChannelEnhancement(),
         ])
 
         image = transform(input_image)
