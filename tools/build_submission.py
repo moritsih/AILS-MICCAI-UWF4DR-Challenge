@@ -5,8 +5,6 @@ import importlib.util
 import typer
 from datetime import datetime
 import numpy as np
-import torch
-import cv2
 
 app = typer.Typer()
 
@@ -18,31 +16,27 @@ class SubmissionBuilder:
     - model.py (MUST): contains a class named "model". The class must have implementations of "init", "load", and "predict" functions.
     - metadata (MUST): indicates the submission is in a code submission format - do not remove this file.
     - model weights (Optional): the model weights file can be in any format as long as it is compatible with the model and the permitted Python packages.
-
-    Usage: `python build_submission.py`
-        Looks up all folders in the "models" directory and prompts to choose one to package it into a submission zip file ready to upload to codalab (including metadata file).
-        Additionally verifies the model file for mandatory methods.
     """
 
-    def __init__(self, models_dir: str = "../models", output_dir: str = "../submissions"):
+    CHECK_POINT_FILE_PATH_PLACEHOLDER = "#checkpoint_file_path#"
+
+    def __init__(self, model_file: str, checkpoint_file: str = None, label: str = None, output_dir: str = "../submissions"):
         """
         Initialize the SubmissionBuilder.
 
         Args:
-        models_dir (str): Path to the directory containing model folders. Defaults to "models".
+        model_file (str): Path to the model.py file.
+        checkpoint_file (str): Path to the checkpoint file. Defaults to None.
+        label (str): Optional label for the zip file. Defaults to None.
         output_dir (str): Path to the directory where the submission zip file will be saved. Defaults to "submission".
+
+        NOTE: The checkpoint file path in the model can be specified as "#checkpoint_file_path#" - this will be replaced
+        then with the actual checkpoint file path in the copied model file.
         """
-        self.models_dir = models_dir
+        self.model_file = model_file
+        self.checkpoint_file = checkpoint_file
+        self.label = label
         self.output_dir = output_dir
-
-    def list_model_folders(self):
-        """
-        List all subdirectories in the models directory.
-
-        Returns:
-        List[str]: List of subdirectory names.
-        """
-        return [f.name for f in os.scandir(self.models_dir) if f.is_dir()]
 
     @staticmethod
     def verify_model_class(model_file: str):
@@ -55,42 +49,29 @@ class SubmissionBuilder:
         Raises:
         ValueError: If the model class does not contain the required methods.
         """
-        # Load the model module
         spec = importlib.util.spec_from_file_location("model", model_file)
         model_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(model_module)
 
-        # Check for the model class
         if not hasattr(model_module, "model"):
             raise ValueError("The model file must contain a class named 'model'.")
 
         model_class = model_module.model
-
-        # Check for required methods
         required_methods = ["init", "load", "predict"]
         for method in required_methods:
             if not hasattr(model_class, method):
                 raise ValueError(f"The model class must contain a '{method}' method.")
 
-    def copy_or_create_metadata_file(self, model_dir: str, temp_dir: str):
+    def create_metadata_file(self, temp_dir: str):
         """
-        Check for a metadata file in the model folder. If not present, create an empty one in the temp directory.
+        Create an empty metadata file in the temp directory.
 
         Args:
-        model_folder (str): Path to the model folder.
-        temp_dir (str): Path to the temporary directory where the metadata file will be created if not found.
+        temp_dir (str): Path to the temporary directory where the metadata file will be created.
         """
-        metadata_file_path = os.path.join(model_dir, "metadata")
         temp_metadata_path = os.path.join(temp_dir, "metadata")
-
-        # Check if metadata file exists in the model folder
-        if not os.path.exists(metadata_file_path):
-            # If not, create an empty metadata file in the temp directory
-            with open(temp_metadata_path, 'w') as f:
-                f.write('Indicates the submission is in a code submission format - do not remove this file.')
-        else:
-            # If exists, copy the existing metadata file to the temp directory
-            shutil.copy(metadata_file_path, temp_metadata_path)
+        with open(temp_metadata_path, 'w') as f:
+            f.write('Indicates the submission is in a code submission format - do not remove this file.')
 
     @staticmethod
     def create_random_image(height, width, channels):
@@ -107,101 +88,98 @@ class SubmissionBuilder:
         """
         return np.random.randint(0, 256, (height, width, channels), dtype=np.uint8)
 
-    def test_model_with_random_image(self, model_module, model_class, model_dir):
+    def test_model_with_random_image(self, model_class, dir_path):
         """
         Test the model by running a prediction on a random image.
 
         Args:
         model_module: The model module loaded from the model file.
         model_class: The model class.
-        model_dir: Directory of the model to load weights from.
 
         Raises:
         ValueError: If the model fails to make a prediction.
         """
         model_instance = model_class()
-        model_instance.load(model_dir)
+        if self.checkpoint_file:
+            model_instance.load(dir_path)  # Load the model without the actual directory path
 
-        # create a random image
         random_image = self.create_random_image(800, 1016, 3)
 
-        # perform prediction
         try:
             prediction = model_instance.predict(random_image)
             typer.echo(f"Prediction on random image: {prediction}")
         except Exception as e:
             raise ValueError(f"Model prediction failed: {e}")
 
-    def create_submission_zip(self, model_dir: str, include_pth_files: bool = True):
+    def create_submission_zip(self):
         """
         Create a submission zip file for the CodaLab challenge.
-
-        Args:
-        model_folder (str): Path to the model folder.
-        auto_include_weights (bool): Automatically lookup and include the .pth weights files if True. Defaults to True.
         """
-        model_file = os.path.join(model_dir, "model.py")
-        weights_files = []
-
-        # Verify the model class
-        self.verify_model_class(model_file)
+        self.verify_model_class(self.model_file)
 
         temp_dir = "temp_submission"
         os.makedirs(temp_dir, exist_ok=True)
 
-        shutil.copy(model_file, os.path.join(temp_dir, "model.py"))
+        self.create_metadata_file(temp_dir)
 
-        self.copy_or_create_metadata_file(model_dir, temp_dir)
+        checkpoint_file_basename = ''# Copy the checkpoint file
+        if self.checkpoint_file:
+            checkpoint_file_basename = os.path.basename(self.checkpoint_file)
+            shutil.copy(self.checkpoint_file, os.path.join(temp_dir, checkpoint_file_basename))
 
-        # copy weights files
-        if include_pth_files:
-            for file in os.listdir(model_dir):
-                if file.endswith(".pth"):
-                    weights_file = os.path.join(model_dir, file)
-                    shutil.copy(weights_file, os.path.join(temp_dir, os.path.basename(weights_file)))
+        # Copy and modify the model file
+        with open(self.model_file, 'r') as temp_dir_file:
+            model_content = temp_dir_file.read()
 
-        # test model with random image
+        if checkpoint_file_basename:  # Replace the placeholder with the actual checkpoint file path
+            model_content = model_content.replace(self.CHECK_POINT_FILE_PATH_PLACEHOLDER, checkpoint_file_basename)
+
+        target_model_file_path = os.path.join(temp_dir, "model.py")
+        with open(target_model_file_path, 'w') as target_model_file:
+            target_model_file.write(model_content)
+
         typer.echo("Testing instantiating the model and predict based on a random image...")
-        spec = importlib.util.spec_from_file_location("model", model_file)
+        spec = importlib.util.spec_from_file_location("model", target_model_file_path)
         model_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(model_module)
-        self.test_model_with_random_image(model_module, model_module.model, model_dir)
+        self.test_model_with_random_image(model_module.model, temp_dir)
 
-        # create output directory if it doesn't exist
         os.makedirs(self.output_dir, exist_ok=True)
+        zip_label = self.label if self.label else f'Submission_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}'
+        output_zip = os.path.join(self.output_dir, f"{zip_label}.zip")
 
-        # Create a zip file with the folder name and timestamp
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        output_zip = os.path.join(self.output_dir, f"{os.path.basename(model_dir)}_{timestamp}.zip")
+        typer.echo(f"Creating submission zip file '{output_zip}'")
+
         with zipfile.ZipFile(output_zip, 'w') as zipf:
-            print(f"Create submission zip file '{output_zip}'...")
             for root, dirs, files in os.walk(temp_dir):
-                for file in files:
-                    print(f"-- add file [{file}]")
-                    zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), temp_dir))
+                for temp_dir_file in files:
+                    typer.echo(f"-- Adding file {temp_dir_file}")
+                    zipf.write(os.path.join(root, temp_dir_file), os.path.relpath(os.path.join(root, temp_dir_file), temp_dir))
 
-        # clean up temporary directory
         shutil.rmtree(temp_dir)
-
         typer.echo(f"Submission zip file '{output_zip}' created successfully.")
-        typer.echo(f"Please dont forget to upload the submission zip file to gDrive [https://drive.google.com/drive/folders/1K9Ojqr-6IWIPC7TZuNQt3qhyIN2ExKPY?usp=sharing]")
 
 @app.command()
-def build_submission(auto_include_weights: bool = True, models_dir: str = "../models", output_dir: str = "../submissions"):
+def build_submission(models_dir: str = "../models", output_dir: str = "../submissions"):
     """
     Package the model, metadata, and weights into a submission zip file.
 
     Args:
-    auto_include_weights (bool, optional): Automatically lookup and include the .pth weights files. Defaults to True.
+    models_dir (str): Path to the directory containing model folders. Defaults to "models".
+    output_dir (str): Path to the directory where the submission zip file will be saved. Defaults to "submission".
     """
-    builder = SubmissionBuilder(models_dir, output_dir)
-    # list folders in model directory
-    model_folders = builder.list_model_folders()
+
+    #  create preamble with typer echo
+    typer.echo("#######################################################")
+    typer.echo("# Build Codalab submission zip file interactively")
+    typer.echo("#######################################################")
+
+
+    model_folders = [f.name for f in os.scandir(models_dir) if f.is_dir()]
     if not model_folders:
         typer.echo("No model folders found in the specified directory.")
         raise typer.Exit()
 
-    # prompt the user to choose one
     typer.echo("Choose a model folder:")
     for idx, folder in enumerate(model_folders, start=1):
         typer.echo(f"{idx}. {folder}")
@@ -212,14 +190,47 @@ def build_submission(auto_include_weights: bool = True, models_dir: str = "../mo
         raise typer.Exit()
 
     model_folder = model_folders[folder_index]
+    model_dir = os.path.join(models_dir, model_folder)
 
-    # verify and create the submission zip
-    builder.create_submission_zip(os.path.join(builder.models_dir, model_folder), auto_include_weights)
+    model_file = os.path.join(model_dir, "model.py")
+    if not os.path.exists(model_file):
+        typer.echo("model.py not found in the selected model folder.")
+        raise typer.Exit()
 
+    typer.echo("#######################################################")
 
-def run():
-    app()
+    checkpoint_files = [f for f in os.listdir(model_dir) if f.endswith(".pth")]
+    if checkpoint_files:
+        typer.echo("Choose a checkpoint file:")
+        for idx, checkpoint in enumerate(checkpoint_files, start=1):
+            typer.echo(f"{idx}. {checkpoint}")
+        checkpoint_index = typer.prompt("Enter the number of the checkpoint file", type=int) - 1
 
+        if checkpoint_index < 0 or checkpoint_index >= len(checkpoint_files):
+            typer.echo("Invalid choice.")
+            raise typer.Exit()
+
+        checkpoint_file = os.path.join(model_dir, checkpoint_files[checkpoint_index])
+    else:
+        checkpoint_file = None
+
+    typer.echo("#######################################################")
+
+    default_label = model_folder
+    # try to build label based on checkpoint file name starting at "_2024" until *.pth using sub-string - if not found use current date and time
+    start_index = checkpoint_file.find("_2024")
+    end_index = checkpoint_file.find(".pth")
+    if start_index != -1 and end_index != -1:
+        default_label += f'{checkpoint_file[start_index:end_index]}'
+    else:
+        default_label += f'_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}'
+
+    label = typer.prompt("Optionally enter a different label or accept the default (press enter):", default=default_label)
+    typer.echo(f'label: {label}')
+    typer.echo("#######################################################")
+    typer.echo("Building submission...")
+    builder = SubmissionBuilder(model_file, checkpoint_file, label, output_dir)
+    builder.create_submission_zip()
 
 if __name__ == "__main__":
-    run()
+    app()

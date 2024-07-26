@@ -1,15 +1,19 @@
 import os
-import cv2
 import torch
-from torch import nn
 from efficientnet_pytorch import EfficientNet
+from torchvision import transforms
 
-
+def remove_prefix(state_dict, prefix):
+    """
+    Remove the prefix from state_dict keys.
+    """
+    return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
 class model:
     def __init__(self):
-        self.checkpoint = "best_model_2024-07-10_15-43-20.pth"
+        self.checkpoint = "#checkpoint_file_path#"  # The checkpoint file path will be replaced in the copied model file - see SubmissionBuilder#CHECK_POINT_FILE_PATH_PLACEHOLDER
         # The model is evaluated using CPU, please do not change to GPU to avoid error reporting.
         self.device = torch.device("cpu")
+        self.model = None
 
     def init(self):
         pass  # nothing to do here
@@ -23,10 +27,15 @@ class model:
         :param dir_path: path to the submission directory (for internal use only).
         :return:
         """
-        self.model = Task1EfficientNetB4()
+        self.model = EfficientNet.from_pretrained('efficientnet-b4', num_classes=1)
         # join paths
         checkpoint_path = os.path.join(dir_path, self.checkpoint)
-        self.model.load_state_dict(torch.load(checkpoint_path, map_location=self.device))
+
+        state_dict = torch.load(checkpoint_path, map_location=self.device)
+        state_dict = remove_prefix(state_dict, 'model.') # we need to remove the prefix as on training EfficientNet was wrapped
+
+        self.model.load_state_dict(state_dict)
+
         self.model.to(self.device)
         self.model.eval()
 
@@ -41,38 +50,23 @@ class model:
         :param input_image: the input image to the model.
         :return: a float value indicating the probability of class 1.
         """
-        image = cv2.resize(input_image, (512, 512))
-        image = image / 255
-        image = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0)
-        image = image.to(self.device, torch.float)
+
+        # apply the same transformations as during validation
+        transform = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Resize(size=(800, 1016)),
+            transforms.ToTensor(),
+            #transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+        image = transform(input_image)
+        image = image.unsqueeze(0)  # Add batch dimension
+        image = image.to(self.device)
 
         with torch.no_grad():
             output = self.model(image)
-            prob = torch.sigmoid(output).squeeze(0)
-        
+            prob = torch.sigmoid(output).squeeze(0)  # Using sigmoid for binary classification
 
-        class_1_prob = prob.item()
+        class_1_prob = prob.item()  # Convert to float
 
         return float(class_1_prob)
-
-
-class Task1EfficientNetB4(nn.Module):
-    def __init__(self, learning_rate=1e-3):
-        super(Task1EfficientNetB4, self).__init__()
-
-        self.learning_rate = learning_rate
-
-        # Get model and replace the last layer
-        self.model = EfficientNet.from_pretrained('efficientnet-b4', num_classes=1)
-
-        self.loss_fn = nn.BCEWithLogitsLoss()
-    
-    def forward(self, x):
-        return self.model(x)
-
-    def predict(self, x):
-        with torch.no_grad():
-            pred = torch.sigmoid(self(x))
-        return pred
-
-

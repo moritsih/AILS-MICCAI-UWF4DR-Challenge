@@ -1,25 +1,27 @@
 import os
-
+import torch
+from efficientnet_pytorch import EfficientNet
+from torchvision import transforms
 import cv2
 import numpy as np
-import torch
-from torch import nn
-from efficientnet_pytorch import EfficientNet
+from albumentations.core.transforms_interface import ImageOnlyTransform
 import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
-from albumentations.core.transforms_interface import ImageOnlyTransform
 
-
+def remove_prefix(state_dict, prefix):
+    """
+    Remove the prefix from state_dict keys.
+    """
+    return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
 class model:
     def __init__(self):
-        self.checkpoint = "automorph_alldata_combinedloss_encfrozen.pth"
+        self.checkpoint = "#checkpoint_file_path#"  # The checkpoint file path will be replaced in the copied model file - see SubmissionBuilder#CHECK_POINT_FILE_PATH_PLACEHOLDER
         # The model is evaluated using CPU, please do not change to GPU to avoid error reporting.
         self.device = torch.device("cpu")
         self.model = None
 
     def init(self):
-        ellipse = cv2.ellipse(np.zeros((800, 1016), dtype=np.uint8), (525, 400), (480, 380), 0, 0, 360, 1, -1)
-        self.mask = np.array([ellipse, ellipse, ellipse], dtype=np.uint8).transpose(1, 2, 0)
+        pass  # nothing to do here
 
     def load(self, dir_path):
         """
@@ -30,14 +32,15 @@ class model:
         :param dir_path: path to the submission directory (for internal use only).
         :return:
         """
-        self.model = build_automorph_model()
+        self.model = EfficientNet.from_pretrained('efficientnet-b0', num_classes=1)
         # join paths
         checkpoint_path = os.path.join(dir_path, self.checkpoint)
 
         state_dict = torch.load(checkpoint_path, map_location=self.device)
-        state_dict = remove_prefix_in_state_dict(state_dict,'model.')  # we need to remove the prefix as on training EfficientNet was wrapped
+        state_dict = remove_prefix(state_dict, 'model.') # we need to remove the prefix as on training EfficientNet was wrapped
 
         self.model.load_state_dict(state_dict)
+
         self.model.to(self.device)
         self.model.eval()
 
@@ -57,10 +60,9 @@ class model:
             A.Resize(800, 1016, p=1),
             A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], p=1),
             MultiplyMask(p=1),
-            A.Resize(800, 1016, p=1),
             ToTensorV2(p=1)
         ])
-
+        
         image = transform(image=input_image)['image']
         image = image.unsqueeze(0)  # Add batch dimension
         image = image.to(self.device)
@@ -73,35 +75,11 @@ class model:
 
         return float(class_1_prob)
 
-def mask_frame(self, img):
 
-        img = img * self.mask
-
-        return self.cropper(img)
-
-def cropper(self, img):
-        return img[400-380:400+380, 525-480:525+480]
-
-def build_automorph_model():
-    # code taken from https://github.com/rmaphoh/AutoMorph/blob/main/M1_Retinal_Image_quality_EyePACS/model.py
-    model = EfficientNet.from_pretrained('efficientnet-b4')
-    model._fc = nn.Identity()
-    net_fl = nn.Sequential(
-        nn.Linear(1792, 256),
-        nn.ReLU(),
-        nn.Dropout(p=0.5),
-        nn.Linear(256, 64),
-        nn.ReLU(),
-        nn.Dropout(p=0.5),
-        nn.Linear(64, 3)
-    )
-    model._fc = net_fl
-    # add a final layer that outputs single value
-    model._fc.add_module("7", nn.Linear(3, 1))
-    return model
 
 ellipse = cv2.ellipse(np.zeros((800, 1016), dtype=np.uint8), (525, 400), (480, 380), 0, 0, 360, 1, -1) # ellipse mask made from hand-drawn mask
 MASK = np.array([ellipse, ellipse, ellipse], dtype=np.uint8).transpose(1, 2, 0)
+
 
 class MultiplyMask(ImageOnlyTransform):
     """

@@ -139,30 +139,39 @@ class EpochValidationEndHook(ABC):
     def on_epoch_validation_end(self, training_context: TrainingContext, val_results: ModelResultsAndLabels):
         pass
 
-class DefaultEpochEndHook(EpochEndHook):
-    def on_epoch_end(self, training_context: TrainingContext, train_results: ModelResultsAndLabels, val_results: ModelResultsAndLabels):
+
+class _EpochTrainResultPrinter:  # internal class for print training results on epoch end
+    def print_train_val_result(self, training_context: TrainingContext, train_results: ModelResultsAndLabels, val_results: ModelResultsAndLabels):
         curr_lr = training_context.optimizer.param_groups[0]['lr']
         metrics_to_print = training_context.get_current_epoch_metrics()
 
-        metrics_str = ', '.join([f'{metric_name}: {metric_value:.4f}' for metric_name, metric_value in metrics_to_print.items()])
+        metrics_str = ', '.join(
+            [f'{metric_name}: {metric_value:.4f}' for metric_name, metric_value in metrics_to_print.items()])
 
         print(training_context.get_epoch_info() + " Summary : " +
               f'Train Loss: {train_results.model_results.loss:.4f}, Val Loss: {val_results.model_results.loss:.4f}, LR: {curr_lr:.2e}, ' +
               metrics_str)
 
+class DefaultEpochEndHook(EpochEndHook):
+    def on_epoch_end(self, training_context: TrainingContext, train_results: ModelResultsAndLabels, val_results: ModelResultsAndLabels):
+        _EpochTrainResultPrinter().print_train_val_result(training_context, train_results, val_results)
+
 
 class PersistBestModelOnEpochEndHook(EpochEndHook):
-    def __init__(self, save_path):
+    def __init__(self, save_path, print_train_results: bool = False):
         self.save_path = save_path
         self.best_val_loss = float('inf')
+        self.print_train_results = print_train_results
 
     def on_epoch_end(self, training_context: TrainingContext, train_results: ModelResultsAndLabels, val_results: ModelResultsAndLabels):
         current_val_loss = val_results.model_results.loss
         if current_val_loss < self.best_val_loss:
             self.best_val_loss = current_val_loss
             torch.save(training_context.model.state_dict(), self.save_path)
-            print(f"New best model found at epoch {training_context.current_epoch} with validation loss: {current_val_loss:.4f}. Model saved to {self.save_path}")
+            print(f"New best weights found at epoch {training_context.current_epoch} with validation loss: {current_val_loss:.4f}. Model saved to {self.save_path}")
 
+        if self.print_train_results:
+            _EpochTrainResultPrinter().print_train_val_result(training_context, train_results, val_results)
 
 class MetricsMetaInfo:
     def __init__(self, print_in_summary: bool = True, print_in_progress: bool = False, evaluate_per_epoch: bool = True, evaluate_per_batch: bool = False):
@@ -205,7 +214,7 @@ class DefaultMetricsEvaluationStrategy(MetricsEvaluationStrategy):
         results = {}
 
         y_true = np.array(model_val_results.labels)
-        y_pred = np.array(model_val_results.model_results.outputs)
+        y_pred = self._sigmoid(np.array(model_val_results.model_results.outputs))
 
         for i, metric in enumerate(self.metrics):
             
@@ -238,6 +247,9 @@ class DefaultMetricsEvaluationStrategy(MetricsEvaluationStrategy):
         assert metric_calculated_hook is not None
         self.metric_calculated_hooks.append(metric_calculated_hook)
         return self
+
+    def _sigmoid(self, z):
+        return 1/(1 + np.exp(-z))
 
 class BatchTrainingStrategy(ABC):
     @abstractmethod
@@ -283,6 +295,8 @@ class DefaultDataBatchExtractorStrategy(DataBatchExtractorStrategy):
         # Assuming identifiers are not provided by default, however, we strongly recommend providing identifiers for better debugging and analysis
         return None
 
+
+
 class DefaultBatchTrainingStrategy(BatchTrainingStrategy):
     def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy()):
         self.batch_extractor_strategy = batch_extractor_strategy
@@ -311,6 +325,7 @@ class DefaultBatchTrainingStrategy(BatchTrainingStrategy):
         
         return ModelResultsAndLabels(ModelResults(loss.item(), outputs, identifiers), labels)
 
+
 class DefaultBatchValidationStrategy(BatchValidationStrategy):
     def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy()):
         self.batch_extractor_strategy = batch_extractor_strategy
@@ -329,9 +344,69 @@ class DefaultBatchValidationStrategy(BatchValidationStrategy):
         
         return ModelResultsAndLabels(ModelResults(loss.item(), outputs, identifiers), labels)
 
+
+
+
+class ResamplingStrategy(ABC):
+    @abstractmethod
+    def apply(self, dataloader):
+        pass
+
+
+class DefaultResamplingStrategy(ResamplingStrategy):
+    def apply(self, dataloader):
+        # no resampling is applied by default
+        return dataloader
+    
+
+class OversamplingResamplingStrategy(ResamplingStrategy):
+    def apply(self, dataloader):
+        # extract pandas df from dataloader
+        unresampled_data = dataloader.dataset.data
+
+        # find the label column for grouping
+        label_col = unresampled_data.columns[-1]
+
+        # to undersample, sample without replacement until all classes have the number of samples of the majority class
+        class_counts = unresampled_data[label_col].value_counts()
+
+        min_class_count = class_counts.max()  # get the count of the majority class
+
+        resampled_data = unresampled_data.groupby(label_col).apply(lambda x: x.sample(min_class_count, replace=True)).reset_index(drop=True)
+
+        # create a new dataloader with the resampled data
+        dataloader.dataset.data = resampled_data
+
+        return dataloader
+    
+    
+class UndersamplingResamplingStrategy(ResamplingStrategy):
+    def apply(self, dataloader):
+
+        # extract pandas df from dataloader
+        unresampled_data = dataloader.dataset.data
+
+        # find the label column for grouping
+        label_col = unresampled_data.columns[-1]
+
+        # to undersample, sample without replacement until all classes have the number of samples of the minority class
+        class_counts = unresampled_data[label_col].value_counts()
+
+        min_class_count = class_counts.min()  # get the count of the minority class
+
+        resampled_data = unresampled_data.groupby(label_col).apply(lambda x: x.sample(min_class_count, replace=False)).reset_index(drop=True)
+
+        # create a new dataloader with the resampled data
+        dataloader.dataset.data = resampled_data
+
+        return dataloader
+
+
+
 class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
-    def __init__(self, batch_strategy=None):
+    def __init__(self, batch_strategy=None, resampling_strategy: ResamplingStrategy = None):
         self.batch_strategy = batch_strategy or DefaultBatchTrainingStrategy()
+        self.resampling_strategy = resampling_strategy or DefaultResamplingStrategy()
 
     def train(self, training_context: TrainingContext, train_loader) -> ModelResultsAndLabels:
         training_context.model.train()
@@ -339,6 +414,8 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
         total = 0
         avg_loss = inf
         results = ModelResultsAndLabels(ModelResults(avg_loss, [], None), [])
+
+        train_loader = self.resampling_strategy.apply(train_loader)
 
         with tqdm(train_loader) as pbar:
             pbar.set_description(f"{training_context.get_epoch_info()} - Starting training... ")
@@ -372,9 +449,12 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
         assert inputs.size(0) == labels.size(0), f"Batch size mismatch between inputs and labels : {inputs.size(0)} != {labels.size(0)}"
         return inputs.size(0)
 
+
+
 class DefaultEpochValidationStrategy(EpochValidationStrategy):
-    def __init__(self, batch_strategy=None):
+    def __init__(self, batch_strategy=None, resampling_strategy: ResamplingStrategy = None):
         self.batch_strategy = batch_strategy or DefaultBatchValidationStrategy()
+        self.resampling_strategy = resampling_strategy or DefaultResamplingStrategy()
 
     def validate(self, training_context: TrainingContext, val_loader):
         training_context.model.eval()
@@ -382,6 +462,8 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
         total = 0
         avg_loss = inf
         results = ModelResultsAndLabels(ModelResults(avg_loss, [], None), [])
+
+        val_loader = self.resampling_strategy.apply(val_loader)
 
         with torch.no_grad():
             with tqdm(val_loader) as pbar:
@@ -414,10 +496,17 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
         labels = self.batch_strategy.batch_extractor_strategy.get_labels(batch)
         assert inputs.size(0) == labels.size(0), f"Batch size mismatch between inputs and labels : {inputs.size(0)} != {labels.size(0)}"
         return inputs.size(0)
+    
 
 class Trainer:
-    def __init__(self, model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device=None, training_strategy: EpochTrainingStrategy=None, 
-            validation_strategy: EpochValidationStrategy=None, metrics_eval_strategy: DefaultMetricsEvaluationStrategy = None):
+    def __init__(self, model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device=None, 
+                 training_strategy: EpochTrainingStrategy=None, 
+                 validation_strategy: EpochValidationStrategy=None, 
+                 metrics_eval_strategy: DefaultMetricsEvaluationStrategy = None, 
+                 resampling_strategy: str = "default"):
+        
+        resampling_strategy = self.get_resampling_strategy(resampling_strategy)
+        
         assert model is not None
         self.model = model
         self.train_loader = train_loader
@@ -427,12 +516,24 @@ class Trainer:
         self.lr_scheduler = lr_scheduler
         self.device = device or next(model.parameters()).device
         self.timer = Timer()
-        self.training_strategy = training_strategy or DefaultEpochTrainingStrategy(DefaultBatchTrainingStrategy())
-        self.validation_strategy = validation_strategy or DefaultEpochValidationStrategy(DefaultBatchValidationStrategy())
+        self.training_strategy = training_strategy or DefaultEpochTrainingStrategy(DefaultBatchTrainingStrategy(),
+                                                                                   resampling_strategy=resampling_strategy)
+        self.validation_strategy = validation_strategy or DefaultEpochValidationStrategy(DefaultBatchValidationStrategy(),
+                                                                                         resampling_strategy=resampling_strategy)
         self.metrics_eval_strategy = metrics_eval_strategy or DefaultMetricsEvaluationStrategy([])
         self.epoch_end_hooks : List[EpochEndHook]= []
         self.epoch_train_end_hooks: List[EpochTrainEndHook] = []
         self.epoch_validation_end_hooks: List[EpochValidationEndHook] = []
+
+    def get_resampling_strategy(self, resampling_strategy: str):
+        if resampling_strategy.lower() == "oversampling":
+            return OversamplingResamplingStrategy()
+        elif resampling_strategy.lower() == "undersampling":
+            return UndersamplingResamplingStrategy()
+        elif resampling_strategy.lower() == "default" or resampling_strategy.lower() == "none":
+            return DefaultResamplingStrategy()
+        else:
+            raise ValueError(f"Unknown resampling strategy: {resampling_strategy}")
 
     def add_epoch_end_hook(self, hook: EpochEndHook) -> 'Trainer':
         self.epoch_end_hooks.append(hook)
@@ -477,3 +578,4 @@ class Trainer:
             
             for hook in self.epoch_end_hooks:
                 hook.on_epoch_end(training_context, model_train_results, model_val_results)
+

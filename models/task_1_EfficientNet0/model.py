@@ -1,13 +1,18 @@
 import os
 import torch
-from torch import nn
 from efficientnet_pytorch import EfficientNet
 from torchvision import transforms
-
-
+import cv2
+import numpy as np
+from skimage import restoration
+def remove_prefix(state_dict, prefix):
+    """
+    Remove the prefix from state_dict keys.
+    """
+    return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
 class model:
     def __init__(self):
-        self.checkpoint = "AutoMorphModel_refined_weights.pth"
+        self.checkpoint = "#checkpoint_file_path#"  # The checkpoint file path will be replaced in the copied model file - see SubmissionBuilder#CHECK_POINT_FILE_PATH_PLACEHOLDER
         # The model is evaluated using CPU, please do not change to GPU to avoid error reporting.
         self.device = torch.device("cpu")
         self.model = None
@@ -24,14 +29,15 @@ class model:
         :param dir_path: path to the submission directory (for internal use only).
         :return:
         """
-        self.model = build_automorph_model()
+        self.model = EfficientNet.from_pretrained('efficientnet-b0', num_classes=1)
         # join paths
         checkpoint_path = os.path.join(dir_path, self.checkpoint)
 
         state_dict = torch.load(checkpoint_path, map_location=self.device)
-        state_dict = remove_prefix_in_state_dict(state_dict,'model.')  # we need to remove the prefix as on training EfficientNet was wrapped
+        state_dict = remove_prefix(state_dict, 'model.') # we need to remove the prefix as on training EfficientNet was wrapped
 
         self.model.load_state_dict(state_dict)
+
         self.model.to(self.device)
         self.model.eval()
 
@@ -49,10 +55,10 @@ class model:
         # apply the same transformations as during validation
         transform = transforms.Compose([
             transforms.ToPILImage(),
-            transforms.Resize(size=(800, 1016)),
-            transforms.ToTensor(),
-            # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) # RGB
-            transforms.Normalize(mean=[0.406, 0.456, 0.485], std=[0.225, 0.224, 0.229])  # BGR
+            transforms.ToTensor(),  # Convert to float32 tensor and scale
+            #GreenChannelEnhancement(),  # Apply Wiener filter and CLAHE
+            transforms.Resize(size=(400, 508)),
+            transforms.Normalize(mean=[0.406, 0.456, 0.485], std=[0.225, 0.224, 0.229])
         ])
 
         image = transform(input_image)
@@ -67,27 +73,35 @@ class model:
 
         return float(class_1_prob)
 
-def build_automorph_model():
-    # code taken from https://github.com/rmaphoh/AutoMorph/blob/main/M1_Retinal_Image_quality_EyePACS/model.py
-    model = EfficientNet.from_pretrained('efficientnet-b4')
-    model._fc = nn.Identity()
-    net_fl = nn.Sequential(
-        nn.Linear(1792, 256),
-        nn.ReLU(),
-        nn.Dropout(p=0.5),
-        nn.Linear(256, 64),
-        nn.ReLU(),
-        nn.Dropout(p=0.5),
-        nn.Linear(64, 3)
-    )
-    model._fc = net_fl
-    # add a final layer that outputs single value
-    model._fc.add_module("7", nn.Linear(3, 1))
-    return model
+class GreenChannelEnhancement:
+    def __call__(self, img):
+        # Convert to numpy array if it's a tensor
+        if isinstance(img, torch.Tensor):
+            img = img.numpy().transpose((1, 2, 0))
 
+        # Ensure the image is in the correct format
+        img = img.astype(np.float32)
 
-def remove_prefix_in_state_dict(state_dict, prefix):
-    """
-    Remove the prefix from state_dict keys.
-    """
-    return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
+        # Separate the channels
+        r, g, b = cv2.split(img)
+
+        # Apply Wiener filter to the green channel
+        psf = np.ones((5, 5)) / 25
+        g_filtered = restoration.wiener(g, psf, balance=0.1)
+
+        # Apply CLAHE to the filtered green channel
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        g_enhanced = clahe.apply((g_filtered * 255).astype(np.uint8))
+        g_enhanced = g_enhanced / 255.0  # Normalize back to range [0, 1]
+
+        # Ensure all channels are the same type
+        r = r.astype(np.float32)
+        g_enhanced = g_enhanced.astype(np.float32)
+        b = b.astype(np.float32)
+
+        # Merge the enhanced green channel back with the original red and blue channels
+        enhanced_img = cv2.merge((r, g_enhanced, b))
+
+        # Convert back to tensor
+        enhanced_img = torch.from_numpy(enhanced_img.transpose((2, 0, 1)))
+        return enhanced_img

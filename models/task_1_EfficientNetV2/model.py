@@ -1,7 +1,9 @@
 import os
 import torch
-from efficientnet_pytorch import EfficientNet
+from torchvision.models import efficientnet_v2_s
 from torchvision import transforms
+import torch.nn as nn
+from torchvision.transforms import v2
 
 def remove_prefix(state_dict, prefix):
     """
@@ -10,7 +12,7 @@ def remove_prefix(state_dict, prefix):
     return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
 class model:
     def __init__(self):
-        self.checkpoint = "best_model_2024-07-10_15-43-20.pth"
+        self.checkpoint = "#checkpoint_file_path#"  # The checkpoint file path will be replaced in the copied model file - see SubmissionBuilder#CHECK_POINT_FILE_PATH_PLACEHOLDER
         # The model is evaluated using CPU, please do not change to GPU to avoid error reporting.
         self.device = torch.device("cpu")
         self.model = None
@@ -27,7 +29,21 @@ class model:
         :param dir_path: path to the submission directory (for internal use only).
         :return:
         """
-        self.model = EfficientNet.from_pretrained('efficientnet-b4', num_classes=1)
+        # Get the EfficientNetV2 model
+        self.model = efficientnet_v2_s(weights="IMAGENET1K_V1")
+
+        # Replace the entire classifier block
+        in_features = self.model.classifier[1].in_features
+        self.model.classifier = nn.Sequential(
+            nn.Linear(in_features, 512),
+            nn.ReLU(),
+            nn.Dropout(p=0.4),
+            nn.Linear(512, 64),
+            nn.ReLU(),
+            nn.Dropout(p=0.2),
+            nn.Linear(64, 1)
+        )
+
         # join paths
         checkpoint_path = os.path.join(dir_path, self.checkpoint)
 
@@ -50,13 +66,11 @@ class model:
         :param input_image: the input image to the model.
         :return: a float value indicating the probability of class 1.
         """
-
         # apply the same transformations as during validation
         transform = transforms.Compose([
-            transforms.ToPILImage(),
-            transforms.Resize(size=(512, 512)),
-            transforms.ToTensor(),
-            #transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            v2.ToPILImage(),
+            v2.ToImage(),
+            v2.ToDtype(torch.float32, scale=True),
         ])
 
         image = transform(input_image)
