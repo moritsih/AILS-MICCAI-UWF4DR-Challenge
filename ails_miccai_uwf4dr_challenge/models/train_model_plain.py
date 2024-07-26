@@ -27,6 +27,7 @@ from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluation
     DefaultBatchTrainingStrategy, TrainingContext, PersistBestModelOnEpochEndHook
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph_plain import AutoMorphModel
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
+from ails_miccai_uwf4dr_challenge.models.architectures.ResNets import ResNet, ResNetVariant
 
 def train(config=None):
 
@@ -54,6 +55,8 @@ def train(config=None):
         model = Task1EfficientNetB4()
     elif config.model_type == 'Task1ConvNeXt':
         model = Task1ConvNeXt()
+    elif config.model_type == 'ResNet':
+        model = ResNet(model_variant=ResNetVariant.RESNET18) # or RESNET34, RESNET50
     else:
         raise ValueError(f"Unknown model: {config.model_type}")
 

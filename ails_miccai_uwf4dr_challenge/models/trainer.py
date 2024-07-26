@@ -578,3 +578,4 @@ class Trainer:
             
             for hook in self.epoch_end_hooks:
                 hook.on_epoch_end(training_context, model_train_results, model_val_results)
+
