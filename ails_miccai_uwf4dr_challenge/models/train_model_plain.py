@@ -37,8 +37,11 @@ def train(config=None):
 
     train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False)
-    
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu") #don't use mps, it takes ages, whyever that is the case!?!
+
+    # don't use mps, it takes ages, why ever that is the case!?!
+    # --> with my new m3, mps works fine!
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Using device: {device}")
 
     if config.model_type == 'AutoMorphModel':
@@ -56,8 +59,18 @@ def train(config=None):
 
     print("Training model: ", model.__class__.__name__)
 
+    def safe_roc_auc_score(y_true, y_pred):
+        try:
+            return roc_auc_score(y_true, y_pred)
+        except ValueError as e:
+            if str(e) == 'Only one class present in y_true. ROC AUC score is not defined in that case.':
+                print(f"Could not evaluate metric auroc: {e}")
+                return None
+            else:
+                raise
+
     metrics = [
-        Metric('auroc', roc_auc_score),
+        Metric('auroc', safe_roc_auc_score),
         Metric('auprc', average_precision_score),
         Metric('accuracy', lambda y_true, y_pred: (y_pred.round() == y_true).mean()),
         Metric('sensitivity', sensitivity_score),

@@ -168,7 +168,9 @@ class _EpochTrainResultPrinter:  # internal class for print training results on 
         metrics_to_print: Dict[str, MetricResult] = training_context.get_current_epoch_metrics()
 
         metrics_str = ', '.join(
-            [f'{metric_name}: {metric_result.value:.4f}' for metric_name, metric_result in metrics_to_print.items()])
+            [f'{metric_name}: {metric_result.value:.4f}' if metric_result.value is not None else f'{metric_name}: None'
+             for metric_name, metric_result in metrics_to_print.items()]
+        )
 
         print(training_context.get_epoch_info() + " Summary : " +
               f'Train Loss: {train_results.model_results.loss:.4f}, Val Loss: {val_results.model_results.loss:.4f}, LR: {curr_lr:.2e}, ' +
@@ -271,7 +273,10 @@ class DefaultMetricsEvaluationStrategy(MetricsEvaluationStrategy):
                 results[metric.name] = MetricResult(metric.name, result)
                 notify_hooks = True
             elif metric.meta_info.evaluate_per_epoch:
-                result = metric.function(y_true, y_pred)
+                try:
+                    result = metric.function(y_true, y_pred)
+                except Exception as e:
+                    raise ValueError(f"Could not evaluate metric {metric.name}", e)
                 results[metric.name] = MetricResult(metric.name, result)
                 notify_hooks = True
 
