@@ -19,7 +19,7 @@ from ails_miccai_uwf4dr_challenge.models.architectures.task1_convnext import Tas
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
 from ails_miccai_uwf4dr_challenge.models.metrics import sensitivity_score, specificity_score
 from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Metric, MetricCalculatedHook, \
-    NumBatches, Trainer, TrainingContext, PersistBestModelOnEpochEndHook
+    NumBatches, Trainer, TrainingContext, PersistBestModelOnEpochEndHook, UndersamplingResamplingStrategy
 
 
 def train(config=None):
@@ -79,9 +79,9 @@ def train(config=None):
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
     trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device,
-                      metrics_eval_strategy=metrics_eval_strategy, resampling_strategy='undersampling')
-
-    # new: resampling strategy: undersampling, oversampling, or default (no resampling)
+                      metrics_eval_strategy=metrics_eval_strategy,
+                      val_dataloader_adapter=UndersamplingResamplingStrategy(),
+                      train_dataloader_adapter=UndersamplingResamplingStrategy())
 
     # build a file name for the model weights containing current timestamp and the model class
     training_date = time.strftime("%Y-%m-%d")
