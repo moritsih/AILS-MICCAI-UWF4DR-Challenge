@@ -158,7 +158,7 @@ class DefaultEpochEndHook(EpochEndHook):
 
 
 class PersistBestModelOnEpochEndHook(EpochEndHook):
-    def __init__(self, save_path, print_train_results: bool = False):
+    def __init__(self, save_path, print_train_results: bool = True):
         self.save_path = save_path
         self.best_val_loss = float('inf')
         self.print_train_results = print_train_results
