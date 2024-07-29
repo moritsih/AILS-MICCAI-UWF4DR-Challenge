@@ -1,14 +1,15 @@
-import os
-import gdown
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import padding
-from cryptography.hazmat.backends import default_backend
-import shutil
-import zipfile
-import tarfile
-from tqdm import tqdm
 import base64
+import os
+import shutil
+import tarfile
+import zipfile
 from enum import Enum
+
+import gdown
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
 
 class FileInfo:
     def __init__(self, url, filename, uncompress=True):
@@ -16,10 +17,12 @@ class FileInfo:
         self.filename = filename
         self.uncompress = uncompress
 
+
 class FileCategory:
     def __init__(self, target_dir, files):
         self.target_dir = target_dir
         self.files = files
+
 
 class FileDownloaderDecryptor:
     class FileCategoryEnum(Enum):
@@ -63,14 +66,20 @@ class FileDownloaderDecryptor:
         )
 
     def __init__(self, key_path="aes256.key", download_directory="data/downloads"):
-        self.key_path = key_path
-        self.download_directory = download_directory
+        # Determine the directory of the current script
+        self.script_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # Construct paths relative to the project root (one level up from script directory)
+        self.project_root = os.path.abspath(os.path.join(self.script_dir, '..'))
+        self.key_path = os.path.join(self.project_root, key_path)
+        self.download_directory = os.path.join(self.project_root, download_directory)
+
         self.key = self.load_key()
-        os.makedirs(download_directory, exist_ok=True)
+        os.makedirs(self.download_directory, exist_ok=True)
 
         # Initialize target directories for each category
         for category in self.FileCategoryEnum:
-            os.makedirs(category.value.target_dir, exist_ok=True)
+            os.makedirs(os.path.join(self.project_root, category.value.target_dir), exist_ok=True)
 
     def load_key(self):
         with open(self.key_path, "rb") as key_file:
@@ -111,18 +120,13 @@ class FileDownloaderDecryptor:
         return decrypted_file_path
 
     def extract_if_compressed(self, file_path, dest_folder, uncompress=True):
+        dest_folder = os.path.join(self.project_root, dest_folder)
+
         if not uncompress:
             print(f"Skipping extraction for '{file_path}'")
             target_path = os.path.join(dest_folder, os.path.basename(file_path))
-            if os.path.abspath(file_path) == os.path.abspath(target_path):
-                print(f"Source and target paths are the same ('{file_path}'). Skipping move.")
-                return
-            if os.path.exists(target_path):
-                print(f"File '{target_path}' already exists. Skipping move.")
-            else:
-                print(f"Moving '{file_path}' to '{dest_folder}'")
-                shutil.move(file_path, dest_folder)
-                print(f"Moved to '{target_path}'")
+
+            self.move_if_necessary(dest_folder, file_path, target_path)
             return
 
         try:
@@ -136,18 +140,24 @@ class FileDownloaderDecryptor:
                     tar_ref.extractall(dest_folder)
             else:
                 target_path = os.path.join(dest_folder, os.path.basename(file_path))
-                if os.path.abspath(file_path) == os.path.abspath(target_path):
-                    print(f"Source and target paths are the same ('{file_path}'). Skipping move.")
-                    return
-                if os.path.exists(target_path):
-                    print(f"File '{target_path}' already exists. Skipping move.")
-                else:
-                    print(f"Moving '{file_path}' to '{dest_folder}'")
-                    shutil.move(file_path, dest_folder)
-                    print(f"Moved to '{target_path}'")
+                self.move_if_necessary(dest_folder, file_path, target_path)
         except Exception as e:
             print(f"An error occurred while extracting '{file_path}': {e}")
             raise
+
+    @staticmethod
+    def move_if_necessary(dest_folder, file_path, target_path):
+        skipped: bool = False
+        if os.path.abspath(file_path) == os.path.abspath(target_path):
+            print(f"Source and target paths are the same ('{file_path}'). Skipping move.")
+            skipped = True
+        if os.path.exists(target_path):
+            print(f"File '{target_path}' already exists. Skipping move.")
+        else:
+            print(f"Moving '{file_path}' to '{dest_folder}'")
+            shutil.move(file_path, dest_folder)
+            print(f"Moved to '{target_path}'")
+        return skipped
 
     def process_files(self):
         for category in self.FileCategoryEnum:
@@ -156,6 +166,7 @@ class FileDownloaderDecryptor:
                 file_path = self.download_file(file_info.url, file_info.filename)
                 decrypted_file_path = self.decrypt_file(file_path)
                 self.extract_if_compressed(decrypted_file_path, dest_folder, file_info.uncompress)
+
 
 if __name__ == "__main__":
     # Initialize the downloader/decryptor
