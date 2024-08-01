@@ -263,6 +263,10 @@ class DatasetBuilder:
 
         self.train_data, self.val_data = self._split_data(self.data, split_ratio=split_ratio)
 
+
+    def __len__(self):
+        return len(self.data)
+
     
     def _sample_mini_dataset(self, data, frac):
         

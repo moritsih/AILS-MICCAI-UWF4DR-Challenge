@@ -12,7 +12,7 @@ def remove_prefix(state_dict, prefix):
     return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
 class model:
     def __init__(self):
-        self.checkpoint = "#checkpoint_file_path#"  # The checkpoint file path will be replaced in the copied model file - see SubmissionBuilder#CHECK_POINT_FILE_PATH_PLACEHOLDER
+        self.checkpoint = "Task1EfficientNetB0_weights_2024-07-31_clean-sweep-31.pth"  # The checkpoint file path will be replaced in the copied model file - see SubmissionBuilder#CHECK_POINT_FILE_PATH_PLACEHOLDER
         # The model is evaluated using CPU, please do not change to GPU to avoid error reporting.
         self.device = torch.device("cpu")
         self.model = None
@@ -57,7 +57,7 @@ class model:
             transforms.ToPILImage(),
             transforms.ToTensor(),  # Convert to float32 tensor and scale
             #GreenChannelEnhancement(),  # Apply Wiener filter and CLAHE
-            transforms.Resize(size=(400, 508)),
+            transforms.Resize(size=(225, 225)),
             transforms.Normalize(mean=[0.406, 0.456, 0.485], std=[0.225, 0.224, 0.229])
         ])
 

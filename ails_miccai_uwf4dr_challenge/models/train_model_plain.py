@@ -12,11 +12,15 @@ from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice
 from ails_miccai_uwf4dr_challenge.config import WANDB_API_KEY
 # data
 from ails_miccai_uwf4dr_challenge.dataset_strategy import CustomDataset, CombinedDatasetStrategy, \
-    Task2Strategy, DatasetBuilder
+    Task1Strategy, DatasetBuilder, OriginalDatasetStrategy
 from ails_miccai_uwf4dr_challenge.models.architectures.ResNets import ResNet, ResNetVariant
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph_plain import AutoMorphModel
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_convnext import Task1ConvNeXt
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
+from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnetb0_plain import Task1EfficientNetB0
+from ails_miccai_uwf4dr_challenge.models.architectures.task1_resnet50_plain import Task1Resnet50
+from ails_miccai_uwf4dr_challenge.models.architectures.task1_shufflenet_plain import Task1ShuffleNetv2x0
+from ails_miccai_uwf4dr_challenge.models.architectures.task1_resnet18_plain import Task1Resnet18
 from ails_miccai_uwf4dr_challenge.models.metrics import sensitivity_score, specificity_score
 from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Metric, MetricCalculatedHook, \
     NumBatches, Trainer, TrainingContext, PersistBestModelOnEpochEndHook, UndersamplingResamplingStrategy
@@ -27,7 +31,7 @@ def train(config=None):
     config = wandb.config
 
     dataset_strategy = CombinedDatasetStrategy()
-    task_strategy = Task2Strategy()
+    task_strategy = Task1Strategy()
 
     builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0.8)
     train_data, val_data = builder.build()
@@ -35,8 +39,8 @@ def train(config=None):
     train_dataset = CustomDataset(train_data, transform=rotate_affine_flip_choice)
     val_dataset = CustomDataset(val_data, transform=resize_only)
 
-    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True, num_workers=8)
+    val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=8)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu") #don't use mps, it takes ages, whyever that is the case!?!
     print(f"Using device: {device}")
@@ -45,8 +49,16 @@ def train(config=None):
         model = AutoMorphModel()
     elif config.model_type == 'Task1EfficientNetB4':
         model = Task1EfficientNetB4()
+    elif config.model_type == 'Task1EfficientNetB0':
+        model = Task1EfficientNetB0()
     elif config.model_type == 'Task1ConvNeXt':
         model = Task1ConvNeXt()
+    elif config.model_type == 'Resnet50':
+        model = Task1Resnet50()
+    elif config.model_type == 'ShuffleNetv2':
+        model = Task1ShuffleNetv2x0()
+    elif config.model_type == 'ResNet18':
+        model = Task1Resnet18()
     elif config.model_type == 'ResNet':
         model = ResNet(model_variant=ResNetVariant.RESNET18)  # or RESNET34, RESNET50
     else:
@@ -88,9 +100,9 @@ def train(config=None):
     persist_model_hook = PersistBestModelOnEpochEndHook(weight_file_name, print_train_results=True)
     trainer.add_epoch_end_hook(persist_model_hook)
 
-    print(
-        "First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
-    trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
+    # print(
+    #     "First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
+    # trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
 
     print("Now train train train")
     trainer.train(num_epochs=config["epochs"])

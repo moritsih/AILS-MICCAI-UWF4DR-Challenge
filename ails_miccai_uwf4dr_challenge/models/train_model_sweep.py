@@ -7,16 +7,16 @@ sweep_config = {
     "method": "random",  # or "grid", or "bayes"
     "parameters": {
         "learning_rate": {
-            "values": [1e-4, 1e-3, 1e-2]
+            "values": [1e-2, 1e-3, 1e-4]
         },
         "epochs": {
-            "values": [10, 15, 20]
+            "values": [20]
         },
         "batch_size": {
-            "values": [4, 7, 9]
+            "values": [4, 8, 16, 32]
         },
         "model_type": {
-            "values": ["AutoMorphModel", "Task1EfficientNetB4", "Task1ConvNeXt"]
+            "values": ["ShuffleNetv2"]
         }
     }
 }
