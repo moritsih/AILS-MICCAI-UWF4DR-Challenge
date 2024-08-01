@@ -244,8 +244,12 @@ class CustomDataset(Dataset):
         label = self.data.iloc[idx, 1]
         label = torch.tensor(label, dtype=torch.float32).unsqueeze(0)
         img = cv2.imread(str(img_path))
-        if self.transform:
-            img = self.transform(img)
+        try:
+            if self.transform:
+                img = self.transform(img)
+        except KeyError:
+            if self.transform:
+                img = self.transform(image=img)['image'] # when using Albumentations
         return img, label
 
 def main():
