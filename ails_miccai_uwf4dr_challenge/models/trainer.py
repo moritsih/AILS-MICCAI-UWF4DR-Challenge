@@ -391,6 +391,19 @@ class DefaultBatchValidationStrategy(BatchValidationStrategy):
 
         return ModelResultsAndLabels(ModelResults(loss.item(), outputs, identifiers), labels)
 
+class SamplingStrategy(ABC):
+    @abstractmethod
+    def sampler(self, data):
+        pass
+
+class WeightedSamplingStrategy(SamplingStrategy):
+    assert sample_weights is not None
+    def __init__(self, sample_weights):
+        self.sample_weights = sample_weights
+
+    def sampler(self, data):
+        sampler = WeightedRandomSampler(self.sample_weights, num_samples=len(self.sample_weights), replacement=True)
+        return sampler
 
 class DataloaderPerEpochAdapter(ABC):
     @abstractmethod

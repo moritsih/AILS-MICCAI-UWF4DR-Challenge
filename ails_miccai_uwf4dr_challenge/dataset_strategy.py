@@ -23,6 +23,12 @@ class DatasetStrategy(ABC):
         data['dr'] = data['dr'].astype(float).round().astype("Int64")
         data['dme'] = data['dme'].astype("Int64")
         return data
+    
+    def sample_weights(self, data):
+        # Calculate class weights
+        class_weights = 1 / data["quality"].value_counts(normalize=True).sort_index().values
+        sample_weights = class_weights[data["quality"].values]
+        return sample_weights
 
 class OriginalDatasetStrategy(DatasetStrategy):
     def get_data(self):
