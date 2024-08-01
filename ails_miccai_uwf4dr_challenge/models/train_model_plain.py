@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 
 import wandb
 # augmentation
-from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice, resize_only
+from ails_miccai_uwf4dr_challenge.augmentations import tranforms_train, transforms_val
 from ails_miccai_uwf4dr_challenge.config import WANDB_API_KEY
 # data
 from ails_miccai_uwf4dr_challenge.dataset_strategy import CustomDataset, CombinedDatasetStrategy, \
@@ -17,6 +17,7 @@ from ails_miccai_uwf4dr_challenge.models.architectures.ResNets import ResNet, Re
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph_plain import AutoMorphModel
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_convnext import Task1ConvNeXt
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
+from ails_miccai_uwf4dr_challenge.models.architectures.task2_efficientnet import Task2EfficientNetB0
 from ails_miccai_uwf4dr_challenge.models.metrics import sensitivity_score, specificity_score
 from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Metric, MetricCalculatedHook, \
     NumBatches, Trainer, TrainingContext, PersistBestModelOnEpochEndHook, UndersamplingResamplingStrategy, WeightedSamplingStrategy
@@ -27,7 +28,7 @@ loss_func = {
     'focalloss': sigmoid_focal_loss(alpha=0.25, gamma=2.0)}
 
 def train(config=None):
-    wandb.init(project="task1", config=config)
+    wandb.init(project="task2", config=config)
     config = wandb.config
 
     dataset_strategy = CombinedDatasetStrategy()
@@ -36,8 +37,8 @@ def train(config=None):
     builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0.8)
     train_data, val_data = builder.build()
 
-    train_dataset = CustomDataset(train_data, transform=rotate_affine_flip_choice)
-    val_dataset = CustomDataset(val_data, transform=resize_only)
+    train_dataset = CustomDataset(train_data, transform=transforms_train)
+    val_dataset = CustomDataset(val_data, transform=transforms_val)
 
     sampler = WeightedSamplingStrategy(train_dataset).sampler()
 
@@ -55,7 +56,9 @@ def train(config=None):
     elif config.model_type == 'Task1ConvNeXt':
         model = Task1ConvNeXt()
     elif config.model_type == 'ResNet':
-        model = ResNet(model_variant=ResNetVariant.RESNET18)  # or RESNET34, RESNET50
+        model = ResNet(model_variant=ResNetVariant.RESNET18),  # or RESNET34, RESNET50
+    elif config.model_type == 'EfficientNetB0':
+        model = Task2EfficientNetB0()
     else:
         raise ValueError(f"Unknown model: {config.model_type}")
 
@@ -86,8 +89,8 @@ def train(config=None):
 
     trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device,
                       metrics_eval_strategy=metrics_eval_strategy,
-                      val_dataloader_adapter=UndersamplingResamplingStrategy(),
-                      train_dataloader_adapter=UndersamplingResamplingStrategy())
+                      val_dataloader_adapter=None,
+                      train_dataloader_adapter=None)
 
     # build a file name for the model weights containing current timestamp and the model class
     training_date = time.strftime("%Y-%m-%d")
@@ -111,13 +114,14 @@ if __name__ == "__main__":
 
     LEARNING_RATE = 1e-3
     EPOCHS = 15
+    BATCH_SIZE = 8
 
     config = {
         "learning_rate": LEARNING_RATE,
         "dataset": "UWF4DR-DEEPDRID",
         "epochs": EPOCHS,
-        "batch_size": 4,
-        "model_type": Task1ConvNeXt().__class__.__name__
+        "batch_size": BATCH_SIZE,
+        "model_type": Task2ConvNeXt().__class__.__name__
     }
 
     wandb.login(key=WANDB_API_KEY)
