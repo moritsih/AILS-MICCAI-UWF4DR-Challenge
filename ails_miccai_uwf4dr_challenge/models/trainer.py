@@ -325,9 +325,15 @@ class DataBatchExtractorStrategy(ABC):
     @abstractmethod
     def get_labels(self, batch):
         pass
+    
+    @abstractmethod
+    def get_weights(self, batch):
+        return None
 
     @abstractmethod
     def get_identifiers(self, batch):
+        # Assuming weights are not provided by default, however, we strongly recommend
+        # providing weights for better debugging and analysis
         pass
 
 
@@ -337,6 +343,9 @@ class DefaultDataBatchExtractorStrategy(DataBatchExtractorStrategy):
 
     def get_labels(self, batch):
         return batch[1]
+    
+    def get_weights(self, batch):
+        return batch[2]
 
     def get_identifiers(self, batch):
         # Assuming identifiers are not provided by default, however, we strongly recommend
@@ -363,6 +372,9 @@ class DefaultBatchTrainingStrategy(BatchTrainingStrategy):
 
         with training_context.timer.time(Timings.CALC_LOSS):
             loss = training_context.criterion(outputs, labels)
+            if len(loss) > 1:
+                loss = loss * self.batch_extractor_strategy.get_weights(batch)
+                loss = loss.mean()
 
         with training_context.timer.time(Timings.BACKWARD_PASS):
             loss.backward()
@@ -393,15 +405,15 @@ class DefaultBatchValidationStrategy(BatchValidationStrategy):
 
 class SamplingStrategy(ABC):
     @abstractmethod
-    def sampler(self, data):
+    def sampler(self):
         pass
 
 class WeightedSamplingStrategy(SamplingStrategy):
-    assert sample_weights is not None
     def __init__(self, sample_weights):
+        assert sample_weights is not None
         self.sample_weights = sample_weights
 
-    def sampler(self, data):
+    def sampler(self):
         sampler = WeightedRandomSampler(self.sample_weights, num_samples=len(self.sample_weights), replacement=True)
         return sampler
 

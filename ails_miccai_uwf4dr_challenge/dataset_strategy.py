@@ -13,6 +13,12 @@ from abc import ABC, abstractmethod
 torch.manual_seed(42)
 np.random.seed(42)
 
+def sample_weights(labels):
+    # Calculate class weights
+    class_weights = 1 / labels.value_counts(normalize=True).sort_index().values
+    sample_weights = class_weights[labels.values]
+    return sample_weights
+
 class DatasetStrategy(ABC):
     @abstractmethod
     def get_data(self):
@@ -24,11 +30,7 @@ class DatasetStrategy(ABC):
         data['dme'] = data['dme'].astype("Int64")
         return data
     
-    def sample_weights(self, data):
-        # Calculate class weights
-        class_weights = 1 / data["quality"].value_counts(normalize=True).sort_index().values
-        sample_weights = class_weights[data["quality"].values]
-        return sample_weights
+
 
 class OriginalDatasetStrategy(DatasetStrategy):
     def get_data(self):
@@ -233,6 +235,7 @@ class DatasetBuilder:
     def build(self):
         data = self.dataset_strategy.get_data()
         data = self.task_strategy.apply(data)
+        data["weight"] = sample_weights(data.iloc[:, 2])
         train_data, val_data = train_test_split(data, test_size=1-self.split_ratio, random_state=42, stratify=data.iloc[:, 1])
         return train_data, val_data
 
@@ -248,11 +251,12 @@ class CustomDataset(Dataset):
     def __getitem__(self, idx):
         img_path = self.data.iloc[idx, 0]
         label = self.data.iloc[idx, 1]
+        weight = self.data.iloc[idx, 2]
         label = torch.tensor(label, dtype=torch.float32).unsqueeze(0)
         img = cv2.imread(str(img_path))
         if self.transform:
             img = self.transform(img)
-        return img, label
+        return img, label, weight
 
 def main():
 

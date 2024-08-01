@@ -19,8 +19,12 @@ from ails_miccai_uwf4dr_challenge.models.architectures.task1_convnext import Tas
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
 from ails_miccai_uwf4dr_challenge.models.metrics import sensitivity_score, specificity_score
 from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Metric, MetricCalculatedHook, \
-    NumBatches, Trainer, TrainingContext, PersistBestModelOnEpochEndHook, UndersamplingResamplingStrategy
+    NumBatches, Trainer, TrainingContext, PersistBestModelOnEpochEndHook, UndersamplingResamplingStrategy, WeightedSamplingStrategy
 
+loss_func = {
+    'bce': nn.BCEWithLogitsLoss(),
+    'bce_w_weights': nn.BCEWithLogitsLoss(reduction='none'),
+    'focalloss': sigmoid_focal_loss(alpha=0.25, gamma=2.0)}
 
 def train(config=None):
     wandb.init(project="task1", config=config)
@@ -35,7 +39,9 @@ def train(config=None):
     train_dataset = CustomDataset(train_data, transform=rotate_affine_flip_choice)
     val_dataset = CustomDataset(val_data, transform=resize_only)
 
-    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
+    sampler = WeightedSamplingStrategy(train_dataset).sampler()
+
+    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True, sampler=sampler)
     val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False)
 
     device = torch.device(
@@ -74,7 +80,7 @@ def train(config=None):
     metrics_eval_strategy = DefaultMetricsEvaluationStrategy(metrics).register_metric_calculated_hook(
         WandbLoggingHook())
 
-    criterion = nn.BCEWithLogitsLoss()
+    criterion = loss_func['bce_w_weights']
     optimizer = optim.AdamW(model.parameters(), lr=config["learning_rate"])
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
