@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 import torch
 from torch.utils.data import Dataset, WeightedRandomSampler
 from abc import ABC, abstractmethod
+from sklearn.model_selection import KFold
 
 # add seeds
 torch.manual_seed(42)
@@ -216,19 +217,42 @@ class Task3Strategy(TaskStrategy):
         return data.drop(columns=['quality', 'dr']).reset_index(drop=True)
     
 
+class TrainAndValData:
+    def __init__(self, train_data, val_data):
+        self.train_data = train_data
+        self.val_data = val_data
+
 
 class DatasetBuilder:
     def __init__(self, dataset_strategy: DatasetStrategy, 
-                 task_strategy: TaskStrategy, split_ratio: float = 0.8):
+                 task_strategy: TaskStrategy, split_ratio: float = 0.8, n_folds: int = 1):
         self.dataset_strategy = dataset_strategy
         self.task_strategy = task_strategy
         self.split_ratio = split_ratio
-        
+        self.n_folds = n_folds
+
     def build(self):
+
+        train_val_data = []    
+
         data = self.dataset_strategy.get_data()
         data = self.task_strategy.apply(data)
-        train_data, val_data = train_test_split(data, test_size=1-self.split_ratio, random_state=42, stratify=data.iloc[:, 1])
-        return train_data, val_data
+
+        if self.n_folds == 1:
+            train_data, val_data = train_test_split(data, test_size=1-self.split_ratio, random_state=42, stratify=data.iloc[:, 1])
+            train_val_data.append(TrainAndValData(train_data, val_data))
+
+        elif self.n_folds > 1:
+            kf = KFold(n_splits=self.n_folds, shuffle=True, random_state=42)
+
+            for train_index, test_index in kf.split(data):
+                train_data, val_data = data.iloc[train_index], data.iloc[test_index]
+                train_val_data.append(TrainAndValData(train_data, val_data))
+
+        else:
+            raise ValueError("n_folds must be a positive integer")
+
+        return train_val_data
 
 
 class CustomDataset(Dataset):
@@ -260,7 +284,7 @@ def main():
 
     # Build dataset
     builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0.8)
-    train_data, val_data = builder.build()
+    train_val_datasets = builder.build()
 
     # Create PyTorch datasets
     train_dataset = CustomDataset(train_data)

@@ -21,6 +21,7 @@ from ails_miccai_uwf4dr_challenge.models.metrics import sensitivity_score, speci
 from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Metric, MetricCalculatedHook, \
     NumBatches, Trainer, TrainingContext, PersistBestModelOnEpochEndHook, UndersamplingResamplingStrategy
 
+from sklearn.model_selection import KFold
 
 def train(config=None):
     wandb.init(project="task1", config=config)
@@ -34,6 +35,9 @@ def train(config=None):
 
     train_dataset = CustomDataset(train_data, transform=rotate_affine_flip_choice)
     val_dataset = CustomDataset(val_data, transform=resize_only)
+
+    kf = KFold(n_splits=1, shuffle=True)
+    kf.get_n_splits(train_dataset)
 
     train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False)
@@ -89,9 +93,9 @@ def train(config=None):
     persist_model_hook = PersistBestModelOnEpochEndHook(weight_file_name, print_train_results=True)
     trainer.add_epoch_end_hook(persist_model_hook)
 
-    print(
-        "First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
-    trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
+    #print(
+    #    "First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
+    #trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
 
     print("Now train train train")
     trainer.train(num_epochs=config["epochs"])

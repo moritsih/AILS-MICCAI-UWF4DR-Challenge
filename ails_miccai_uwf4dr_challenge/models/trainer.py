@@ -9,6 +9,7 @@ from tqdm import tqdm
 from enum import Enum
 import time
 from contextlib import contextmanager
+from torch.utils.data import DataLoader
 
 
 class Timings(Enum):
@@ -544,20 +545,33 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
         assert inputs.size(0) == labels.size(
             0), f"Batch size mismatch between inputs and labels : {inputs.size(0)} != {labels.size(0)}"
         return inputs.size(0)
+    
 
+class Loaders:
+    def init(self, train_loader: DataLoader, val_loader: DataLoader):
+        self.train_loader = train_loader
+        self.val_loader = val_loader
 
 class Trainer:
-    def __init__(self, model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device=None,
+    def init(self, model, criterion, optimizer, lr_scheduler, simple_train_loader: DataLoader = None, simple_val_loader: DataLoader = None, multiple_loaders : List[Loaders] = None, device=None,
                  training_strategy: EpochTrainingStrategy = None,
                  validation_strategy: EpochValidationStrategy = None,
                  metrics_eval_strategy: MetricsEvaluationStrategy = None,
                  train_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
                  val_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter()):
-
+        
         assert model is not None
+
+        if simple_train_loader is not None and simple_val_loader is not None:
+            self.loaders = [Loaders(simple_train_loader, simple_val_loader)]
+        elif multiple_loaders is not None:
+            self.loaders = multiple_loaders
+            if len(self.loaders) == 0:
+                raise ValueError("At least one loader should be provided")
+        else:
+            raise ValueError("Either train_loader and val_loader or loaders should be provided")
+
         self.model = model
-        self.train_loader = train_loader
-        self.val_loader = val_loader
         self.criterion = criterion
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
@@ -588,40 +602,43 @@ class Trainer:
         return self
 
     def train(self, num_epochs: int, num_batches: NumBatches = NumBatches.ALL):
-        if self.device.type != next(self.model.parameters()).device.type:
-            print(
-                f"Moving model to device {self.device}, because it is different "
-                f"from the model's device {next(self.model.parameters()).device}")
-            self.model.to(self.device)
 
-        training_context = TrainingContext(self.model, self.criterion, self.optimizer, self.lr_scheduler, self.timer,
-                                           num_epochs, num_batches)
+        for loaders in self.loaders:
 
-        # by default, we want to at least print the default losses -
-        # you can easily override this by providing some other epoch end hook
-        if not self.epoch_end_hooks:
-            self.epoch_end_hooks.append(DefaultEpochEndHook())
+            if self.device.type != next(self.model.parameters()).device.type:
+                print(
+                    f"Moving model to device {self.device}, because it is different "
+                    f"from the model's device {next(self.model.parameters()).device}")
+                self.model.to(self.device)
 
-        for epoch in range(num_epochs):
-            training_context.current_epoch = epoch + 1
-            model_train_results: ModelResultsAndLabels = self.training_strategy.train(training_context,
-                                                                                      self.train_loader)
-            model_val_results: ModelResultsAndLabels = self.validation_strategy.validate(training_context,
-                                                                                         self.val_loader)
+            training_context = TrainingContext(self.model, self.criterion, self.optimizer, self.lr_scheduler, self.timer,
+                                            num_epochs, num_batches)
 
-            if self.lr_scheduler is not None:
-                if isinstance(self.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                    self.lr_scheduler.step(model_val_results.model_results.loss)
-                else:
-                    self.lr_scheduler.step()
+            # by default, we want to at least print the default losses -
+            # you can easily override this by providing some other epoch end hook
+            if not self.epoch_end_hooks:
+                self.epoch_end_hooks.append(DefaultEpochEndHook())
 
-            for hook in self.epoch_train_end_hooks:
-                hook.on_epoch_train_end(training_context, model_train_results)
+            for epoch in range(num_epochs):
+                training_context.current_epoch = epoch + 1
+                model_train_results: ModelResultsAndLabels = self.training_strategy.train(training_context,
+                                                                                        self.train_loader)
+                model_val_results: ModelResultsAndLabels = self.validation_strategy.validate(training_context,
+                                                                                            self.val_loader)
 
-            for hook in self.epoch_validation_end_hooks:
-                hook.on_epoch_validation_end(training_context, model_val_results)
+                if self.lr_scheduler is not None:
+                    if isinstance(self.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                        self.lr_scheduler.step(model_val_results.model_results.loss)
+                    else:
+                        self.lr_scheduler.step()
 
-            self.metrics_eval_strategy.evaluate(training_context, model_train_results, model_val_results)
+                for hook in self.epoch_train_end_hooks:
+                    hook.on_epoch_train_end(training_context, model_train_results)
 
-            for hook in self.epoch_end_hooks:
-                hook.on_epoch_end(training_context, model_train_results, model_val_results)
+                for hook in self.epoch_validation_end_hooks:
+                    hook.on_epoch_validation_end(training_context, model_val_results)
+
+                self.metrics_eval_strategy.evaluate(training_context, model_train_results, model_val_results)
+
+                for hook in self.epoch_end_hooks:
+                    hook.on_epoch_end(training_context, model_train_results, model_val_results)
