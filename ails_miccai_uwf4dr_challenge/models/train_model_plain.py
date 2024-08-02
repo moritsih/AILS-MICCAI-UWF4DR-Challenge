@@ -101,8 +101,8 @@ def train(config=None):
     persist_model_hook = PersistBestModelOnEpochEndHook(weight_file_name, print_train_results=True)
     trainer.add_epoch_end_hook(persist_model_hook)
 
-    print(
-        "First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
+    print("First train 2 epochs 2 batches to check if everything works - "
+          "you can comment these lines after the code has stabilized...")
     trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
 
     print("Now train train train")
