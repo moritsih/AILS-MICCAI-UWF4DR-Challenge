@@ -552,30 +552,43 @@ class Loaders:
         self.train_loader = train_loader
         self.val_loader = val_loader
 
-class Trainer:
-    def init(self, model, criterion, optimizer, lr_scheduler, simple_train_loader: DataLoader = None, simple_val_loader: DataLoader = None, multiple_loaders : List[Loaders] = None, device=None,
-                 training_strategy: EpochTrainingStrategy = None,
-                 validation_strategy: EpochValidationStrategy = None,
-                 metrics_eval_strategy: MetricsEvaluationStrategy = None,
-                 train_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
-                 val_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter()):
-        
+class ModelRunSpecificStuff:
+    def __init__(self, model, criterion, optimizer, lr_scheduler):
         assert model is not None
-
-        if simple_train_loader is not None and simple_val_loader is not None:
-            self.loaders = [Loaders(simple_train_loader, simple_val_loader)]
-        elif multiple_loaders is not None:
-            self.loaders = multiple_loaders
-            if len(self.loaders) == 0:
-                raise ValueError("At least one loader should be provided")
-        else:
-            raise ValueError("Either train_loader and val_loader or loaders should be provided")
-
+        assert criterion is not None
+        assert optimizer is not None
+        assert lr_scheduler is not None
         self.model = model
         self.criterion = criterion
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
-        self.device = device or next(model.parameters()).device
+
+class Trainer:
+    def init(self, model_run_specific_stuff: ModelRunSpecificStuff = None, single_train_loader: DataLoader = None, single_val_loader: DataLoader = None, multiple_loaders : List[Loaders] = None, device=None,
+                 training_strategy: EpochTrainingStrategy = None,
+                 validation_strategy: EpochValidationStrategy = None,
+                 metrics_eval_strategy: MetricsEvaluationStrategy = None,
+                 train_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
+                 val_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
+                 on_training_run_start_hook: Callable = None
+            ):
+        
+        if single_train_loader is not None and single_val_loader is not None:
+            self.multiple_loaders = [Loaders(single_train_loader, single_val_loader)]
+        elif multiple_loaders is not None:
+            self.multiple_loaders = multiple_loaders
+            if len(self.multiple_loaders) == 0:
+                raise ValueError("At least one loader should be provided")
+        else:                        
+            raise ValueError("Either train_loader and val_loader or loaders should be provided")
+        
+        if model_run_specific_stuff is None and on_training_run_start_hook is None:
+            raise ValueError("Either model_run_specific_stuff or on_training_run_start_hook should be provided")
+
+        self.model_run_specific_stuff = model_run_specific_stuff
+        self.on_training_run_start_hook = on_training_run_start_hook
+
+        self.device = device        
         self.timer = Timer()
         self.training_strategy = (training_strategy or
                                   DefaultEpochTrainingStrategy(DefaultBatchTrainingStrategy(),
@@ -603,15 +616,28 @@ class Trainer:
 
     def train(self, num_epochs: int, num_batches: NumBatches = NumBatches.ALL):
 
-        for loaders in self.loaders:
+        for loaders in self.multiple_loaders:
+            
+            if self.on_training_run_start_hook:
+                model_run_specific_stuff: ModelRunSpecificStuff = self.on_training_run_start_hook()
+            else:
+                model_run_specific_stuff = self.model_run_specific_stuff
+                
+            if model_run_specific_stuff is None:
+                raise ValueError("model_run_specific_stuff must be provided - either directly or via on_training_run_start_hook")
+            
+            model = model_run_specific_stuff.model
+            criterion = model_run_specific_stuff.criterion
+            optimizer = model_run_specific_stuff.optimizer
+            lr_scheduler = model_run_specific_stuff.lr_scheduler
 
-            if self.device.type != next(self.model.parameters()).device.type:
+            if self.device.type != next(model.parameters()).device.type:
                 print(
                     f"Moving model to device {self.device}, because it is different "
-                    f"from the model's device {next(self.model.parameters()).device}")
-                self.model.to(self.device)
+                    f"from the model's device {next(model.parameters()).device}")
+                model.to(self.device)
 
-            training_context = TrainingContext(self.model, self.criterion, self.optimizer, self.lr_scheduler, self.timer,
+            training_context = TrainingContext(model, criterion, optimizer, lr_scheduler, self.timer,
                                             num_epochs, num_batches)
 
             # by default, we want to at least print the default losses -
@@ -622,9 +648,9 @@ class Trainer:
             for epoch in range(num_epochs):
                 training_context.current_epoch = epoch + 1
                 model_train_results: ModelResultsAndLabels = self.training_strategy.train(training_context,
-                                                                                        self.train_loader)
+                                                                                        loaders.train_loader)
                 model_val_results: ModelResultsAndLabels = self.validation_strategy.validate(training_context,
-                                                                                            self.val_loader)
+                                                                                        loaders.val_loader)
 
                 if self.lr_scheduler is not None:
                     if isinstance(self.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):

@@ -1,4 +1,5 @@
 import time
+from typing import List
 
 import torch
 import torch.nn as nn
@@ -12,54 +13,35 @@ from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice
 from ails_miccai_uwf4dr_challenge.config import WANDB_API_KEY
 # data
 from ails_miccai_uwf4dr_challenge.dataset_strategy import CustomDataset, CombinedDatasetStrategy, \
-    Task2Strategy, DatasetBuilder
+    Task2Strategy, DatasetBuilder, TrainAndValData
 from ails_miccai_uwf4dr_challenge.models.architectures.ResNets import ResNet, ResNetVariant
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph_plain import AutoMorphModel
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_convnext import Task1ConvNeXt
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
 from ails_miccai_uwf4dr_challenge.models.metrics import sensitivity_score, specificity_score
-from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Metric, MetricCalculatedHook, \
+from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Loaders, Metric, MetricCalculatedHook, \
     NumBatches, Trainer, TrainingContext, PersistBestModelOnEpochEndHook, UndersamplingResamplingStrategy
 
-from sklearn.model_selection import KFold
-
 def train(config=None):
-    wandb.init(project="task1", config=config)
-    config = wandb.config
-
     dataset_strategy = CombinedDatasetStrategy()
     task_strategy = Task2Strategy()
 
-    builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0.8)
-    train_data, val_data = builder.build()
-
-    train_dataset = CustomDataset(train_data, transform=rotate_affine_flip_choice)
-    val_dataset = CustomDataset(val_data, transform=resize_only)
-
-    kf = KFold(n_splits=1, shuffle=True)
-    kf.get_n_splits(train_dataset)
-
-    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False)
+    builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0., train_set_transformations=rotate_affine_flip_choice, val_set_transformations=resize_only)
+    train_and_val_data : List[TrainAndValData] = builder.build()
+    
+    loaders = []
+    
+    wandb.init(project="task1", config=config)
+    config = wandb.config
+    
+    for train_val_data in train_and_val_data:        
+        train_loader = DataLoader(train_val_data.train_data, batch_size=config['batch_size'], shuffle=True)
+        val_loader = DataLoader(train_val_data.val_data, batch_size=config['batch_size'], shuffle=False)        
+        loaders.append(Loaders(train_loader, val_loader))
 
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu")  #don't use mps, it takes ages, whyever that is the case!?!
     print(f"Using device: {device}")
-
-    if config.model_type == 'AutoMorphModel':
-        model = AutoMorphModel()
-    elif config.model_type == 'Task1EfficientNetB4':
-        model = Task1EfficientNetB4()
-    elif config.model_type == 'Task1ConvNeXt':
-        model = Task1ConvNeXt()
-    elif config.model_type == 'ResNet':
-        model = ResNet(model_variant=ResNetVariant.RESNET18)  # or RESNET34, RESNET50
-    else:
-        raise ValueError(f"Unknown model: {config.model_type}")
-
-    model.to(device)
-
-    print("Training model: ", model.__class__.__name__)
 
     metrics = [
         Metric('auroc', roc_auc_score),
@@ -78,14 +60,12 @@ def train(config=None):
     metrics_eval_strategy = DefaultMetricsEvaluationStrategy(metrics).register_metric_calculated_hook(
         WandbLoggingHook())
 
-    criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=config["learning_rate"])
-    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
+    model_run_specific_stuff = create_model_run_specific_stuff(config, device)
 
-    trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device,
-                      metrics_eval_strategy=metrics_eval_strategy,
-                      val_dataloader_adapter=UndersamplingResamplingStrategy(),
-                      train_dataloader_adapter=UndersamplingResamplingStrategy())
+    #on_training_run_start_hook = function which creates all model run specific stuff and returns it to the trainer
+
+    trainer = Trainer(ModelRunSpecificStuff(model, criterion, optimizer, lr_scheduler), device, multiple_loaders = loaders,
+                      metrics_eval_strategy=metrics_eval_strategy, on_training_run_start_hook=on_training_run_start_hook)
 
     # build a file name for the model weights containing current timestamp and the model class
     training_date = time.strftime("%Y-%m-%d")
@@ -101,6 +81,27 @@ def train(config=None):
     trainer.train(num_epochs=config["epochs"])
 
     print("Finished training")
+
+def create_model_run_specific_stuff(config, device):
+    if config.model_type == 'AutoMorphModel':
+        model = AutoMorphModel()
+    elif config.model_type == 'Task1EfficientNetB4':
+        model = Task1EfficientNetB4()
+    elif config.model_type == 'Task1ConvNeXt':
+        model = Task1ConvNeXt()
+    elif config.model_type == 'ResNet':
+        model = ResNet(model_variant=ResNetVariant.RESNET18)  # or RESNET34, RESNET50
+    else:
+        raise ValueError(f"Unknown model: {config.model_type}")
+
+    model.to(device)
+
+    print("Training model: ", model.__class__.__name__)
+
+    criterion = nn.BCEWithLogitsLoss()
+    optimizer = optim.AdamW(model.parameters(), lr=config["learning_rate"])
+    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
+    return model,criterion,optimizer,lr_scheduler
 
 
 if __name__ == "__main__":

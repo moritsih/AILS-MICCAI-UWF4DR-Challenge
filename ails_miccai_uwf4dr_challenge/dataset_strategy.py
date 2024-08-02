@@ -1,5 +1,6 @@
 import enum
 from pathlib import Path
+from typing import List
 import pandas as pd
 import numpy as np
 import cv2
@@ -215,45 +216,6 @@ class Task3Strategy(TaskStrategy):
 
         # Drop unnecessary columns and reset index
         return data.drop(columns=['quality', 'dr']).reset_index(drop=True)
-    
-
-class TrainAndValData:
-    def __init__(self, train_data, val_data):
-        self.train_data = train_data
-        self.val_data = val_data
-
-
-class DatasetBuilder:
-    def __init__(self, dataset_strategy: DatasetStrategy, 
-                 task_strategy: TaskStrategy, split_ratio: float = 0.8, n_folds: int = 1):
-        self.dataset_strategy = dataset_strategy
-        self.task_strategy = task_strategy
-        self.split_ratio = split_ratio
-        self.n_folds = n_folds
-
-    def build(self):
-
-        train_val_data = []    
-
-        data = self.dataset_strategy.get_data()
-        data = self.task_strategy.apply(data)
-
-        if self.n_folds == 1:
-            train_data, val_data = train_test_split(data, test_size=1-self.split_ratio, random_state=42, stratify=data.iloc[:, 1])
-            train_val_data.append(TrainAndValData(train_data, val_data))
-
-        elif self.n_folds > 1:
-            kf = KFold(n_splits=self.n_folds, shuffle=True, random_state=42)
-
-            for train_index, test_index in kf.split(data):
-                train_data, val_data = data.iloc[train_index], data.iloc[test_index]
-                train_val_data.append(TrainAndValData(train_data, val_data))
-
-        else:
-            raise ValueError("n_folds must be a positive integer")
-
-        return train_val_data
-
 
 class CustomDataset(Dataset):
     def __init__(self, data, transform=None):
@@ -274,7 +236,49 @@ class CustomDataset(Dataset):
         except KeyError:
             if self.transform:
                 img = self.transform(image=img)['image'] # when using Albumentations
-        return img, label
+        return img, label    
+
+class TrainAndValData:
+    def __init__(self, train_data : CustomDataset, val_data : CustomDataset):
+        assert len(train_data) > 0
+        assert len(val_data) > 0
+        self.train_data : CustomDataset= train_data
+        self.val_data : CustomDataset= val_data
+
+
+class DatasetBuilder:
+    def __init__(self, dataset_strategy: DatasetStrategy, 
+                 task_strategy: TaskStrategy, split_ratio: float = 0.8, n_folds: int = 1, train_set_transformations=None, val_set_transformations=None):
+        self.dataset_strategy = dataset_strategy
+        self.task_strategy = task_strategy
+        self.split_ratio = split_ratio
+        self.n_folds = n_folds
+        self.train_set_transformations = train_set_transformations
+        self.val_set_transformations = val_set_transformations
+
+    def build(self) -> List[TrainAndValData]:
+
+        train_val_data = []    
+
+        data = self.dataset_strategy.get_data()
+        data = self.task_strategy.apply(data)
+
+        if self.n_folds == 1:
+            train_data, val_data = train_test_split(data, test_size=1-self.split_ratio, random_state=42, stratify=data.iloc[:, 1])
+            train_val_data.append(TrainAndValData(CustomDataset(train_data), CustomDataset(val_data)))
+
+        elif self.n_folds > 1:
+            kf = KFold(n_splits=self.n_folds, shuffle=True, random_state=42)
+
+            for train_index, test_index in kf.split(data):
+                train_data, val_data = data.iloc[train_index], data.iloc[test_index]
+                train_val_data.append(TrainAndValData(CustomDataset(train_data, self.train_set_transformations), CustomDataset(val_data, self.val_set_transformations)))
+        else:
+            raise ValueError("n_folds must be a positive integer")
+
+        assert len(train_val_data) == self.n_folds
+        return train_val_data
+
 
 def main():
 
@@ -285,13 +289,18 @@ def main():
     # Build dataset
     builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0.8)
     train_val_datasets = builder.build()
+    
 
-    # Create PyTorch datasets
-    train_dataset = CustomDataset(train_data)
-    val_dataset = CustomDataset(val_data)
+    for train_val_dataset in train_val_datasets:
+        train_data = train_val_dataset.train_data
+        val_data = train_val_dataset.val_data
 
-    print("Train dataset size:", len(train_dataset))
-    print("Validation dataset size:", len(val_dataset))
+        # Create PyTorch datasets
+        train_dataset = CustomDataset(train_data)
+        val_dataset = CustomDataset(val_data)
+
+        print("Train dataset size:", len(train_dataset))
+        print("Validation dataset size:", len(val_dataset))
 
 
 if __name__ == "__main__":
