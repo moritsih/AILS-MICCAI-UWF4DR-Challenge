@@ -2,7 +2,9 @@ import os
 import torch
 from efficientnet_pytorch import EfficientNet
 from torchvision import transforms
-import cv2
+import cv2 
+#from torchvision.transforms import v2
+
 import numpy as np
 from albumentations.core.transforms_interface import ImageOnlyTransform
 import albumentations as A
@@ -56,14 +58,24 @@ class model:
         :return: a float value indicating the probability of class 1.
         """
         # apply the same transformations as during validation
-        transform = A.Compose([
+        transform = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.ToTensor(),
+            #v2.ColorJitter(brightness=0.5, contrast=0.4, saturation=0.3, hue=0.3),
+            #v2.RandomHorizontalFlip(),
+            #v2.RandomVerticalFlip(),
+            #v2.RandomRotation(degrees=15, expand=True),
+            #v2.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+            transforms.Resize(size=(800, 1016), antialias=True),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
+        """transform = A.Compose([
             A.Resize(800, 1016, p=1),
             A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], p=1),
             MultiplyMask(p=1),
             ToTensorV2(p=1)
-        ])
+        ])"""
         
-        image = transform(image=input_image)['image']
+        image = transform(input_image)
         image = image.unsqueeze(0)  # Add batch dimension
         image = image.to(self.device)
 
@@ -77,8 +89,8 @@ class model:
 
 
 
-ellipse = cv2.ellipse(np.zeros((800, 1016), dtype=np.uint8), (525, 400), (480, 380), 0, 0, 360, 1, -1) # ellipse mask made from hand-drawn mask
-MASK = np.array([ellipse, ellipse, ellipse], dtype=np.uint8).transpose(1, 2, 0)
+#ellipse = cv2.ellipse(np.zeros((800, 1016), dtype=np.uint8), (525, 400), (480, 380), 0, 0, 360, 1, -1) # ellipse mask made from hand-drawn mask
+#MASK = np.array([ellipse, ellipse, ellipse], dtype=np.uint8).transpose(1, 2, 0)
 
 
 class MultiplyMask(ImageOnlyTransform):

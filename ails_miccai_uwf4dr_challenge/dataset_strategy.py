@@ -235,7 +235,7 @@ class DatasetBuilder:
     def build(self):
         data = self.dataset_strategy.get_data()
         data = self.task_strategy.apply(data)
-        data["weight"] = sample_weights(data.iloc[:, 2])
+        data["weight"] = sample_weights(data.iloc[:, 1])
         train_data, val_data = train_test_split(data, test_size=1-self.split_ratio, random_state=42, stratify=data.iloc[:, 1])
         return train_data, val_data
 

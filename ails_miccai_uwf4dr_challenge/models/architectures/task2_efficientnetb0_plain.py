@@ -4,7 +4,7 @@ from efficientnet_pytorch import EfficientNet
 from pathlib import Path
 
 class Task2EfficientNetB0(nn.Module):
-    def __init__(self, num_classes=2):
+    def __init__(self, num_classes=1):
         super(Task2EfficientNetB0, self).__init__()
         self.num_classes = num_classes
         # Get model and replace the last layer
@@ -25,7 +25,7 @@ class Task2EfficientNetB0(nn.Module):
 
 def main():
     # Initialize model, criterion, optimizer
-    model = Task2EfficientNetB0(num_classes=2)
+    model = Task2EfficientNetB0(num_classes=1)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 

@@ -9,6 +9,63 @@ from tqdm import tqdm
 from enum import Enum
 import time
 from contextlib import contextmanager
+from torch.utils.data import WeightedRandomSampler
+
+import torch
+import torch.nn.functional as F
+
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class SigmoidFocalLoss(nn.Module):
+    def __init__(self, alpha: float = -1, gamma: float = 5, reduction: str = "none"):
+        """
+        Initializes the SigmoidFocalLoss class.
+
+        Args:
+            alpha: Weighting factor in range (0,1) to balance positive vs negative examples.
+                   Default = 0.25.
+            gamma: Exponent of the modulating factor (1 - p_t) to balance easy vs hard examples.
+                   Default = 5.
+            reduction: 'none' | 'mean' | 'sum'
+                       'none': No reduction will be applied to the output.
+                       'mean': The output will be averaged.
+                       'sum': The output will be summed.
+        """
+        super(SigmoidFocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass for computing the Sigmoid Focal Loss.
+
+        Args:
+            inputs: A float tensor of arbitrary shape. The predictions for each example.
+            targets: A float tensor with the same shape as inputs. Stores the binary
+                     classification label for each element in inputs
+                     (0 for the negative class and 1 for the positive class).
+
+        Returns:
+            Loss tensor with the reduction option applied.
+        """
+        inputs = inputs.float()
+        targets = targets.float()
+        p = torch.sigmoid(inputs)
+        ce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
+        p_t = p * targets + (1 - p) * (1 - targets)
+        loss = ce_loss * ((1 - p_t) ** self.gamma)
+
+        if self.alpha >= 0:
+            alpha_t = self.alpha * targets + (1 - self.alpha) * (1 - targets)
+            loss = alpha_t * loss
+
+        return loss
+
+
 
 
 class Timings(Enum):
@@ -346,35 +403,49 @@ class DefaultDataBatchExtractorStrategy(DataBatchExtractorStrategy):
     
     def get_weights(self, batch):
         return batch[2]
+    
 
     def get_identifiers(self, batch):
         # Assuming identifiers are not provided by default, however, we strongly recommend
         # providing identifiers for better debugging and analysis
         return None
 
+import csv
+import torch
+from pathlib import Path
 
 class DefaultBatchTrainingStrategy(BatchTrainingStrategy):
-    def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy()):
+    def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy(), log_csv_path: str = "train_log.csv", loss_type: str = LOSS_TYPE):        
         self.batch_extractor_strategy = batch_extractor_strategy
+        self.log_csv_path = log_csv_path
+        self.loss_type = loss_type
+        # Ensure CSV file exists with headers
+        if not Path(self.log_csv_path).exists():
+            with open(self.log_csv_path, mode='w', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow(["Batch", "Loss", "Logits", "Predicted Class", "Ground Truth"])
 
-    def train_batch(self, training_context: TrainingContext, batch) -> ModelResultsAndLabels:
+    def train_batch(self, training_context: TrainingContext, batch, batch_index: int) -> ModelResultsAndLabels:
         inputs = self.batch_extractor_strategy.get_inputs(batch)
         labels = self.batch_extractor_strategy.get_labels(batch)
         identifiers = self.batch_extractor_strategy.get_identifiers(batch)
+        weights = self.batch_extractor_strategy.get_weights(batch)
+        if self.loss_type != 'bce_w_weights':
+            weights = np.ones_like(labels)
 
         device = training_context.get_device()
 
-        inputs, labels = inputs.to(device), labels.to(device)
+        inputs, labels, weights = inputs.to(device), labels.to(device), weights.to(device)
 
         with training_context.timer.time(Timings.FORWARD_PASS):
             training_context.optimizer.zero_grad()
             outputs = training_context.model(inputs)
 
         with training_context.timer.time(Timings.CALC_LOSS):
-            loss = training_context.criterion(outputs, labels)
-            if len(loss) > 1:
-                loss = loss * self.batch_extractor_strategy.get_weights(batch)
-                loss = loss.mean()
+            # Compute the per-sample loss before applying reduction
+            per_sample_loss = training_context.criterion(outputs, labels, reduction="none")
+            weighted_loss = per_sample_loss * weights
+            loss = weighted_loss.mean()  # or sum, depending on your setup
 
         with training_context.timer.time(Timings.BACKWARD_PASS):
             loss.backward()
@@ -382,26 +453,81 @@ class DefaultBatchTrainingStrategy(BatchTrainingStrategy):
         with training_context.timer.time(Timings.OPTIMIZER_STEP):
             training_context.optimizer.step()
 
+        # Log details for each sample in the batch
+        self._log_to_csv(batch_index, weighted_loss, outputs, labels)
+
         return ModelResultsAndLabels(ModelResults(loss.item(), outputs, identifiers), labels)
+
+    def _log_to_csv(self, batch_index, per_sample_loss, outputs, labels):
+        # Calculate predicted classes
+        predicted_classes = (torch.sigmoid(outputs) > 0.5).int()
+
+        # Prepare data for logging
+        with open(self.log_csv_path, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            for i in range(len(labels)):
+                writer.writerow([
+                    batch_index,
+                    per_sample_loss[i].item(),
+                    outputs[i].cpu().detach().numpy(),
+                    predicted_classes[i].cpu().detach().numpy(),
+                    labels[i].cpu().detach().numpy()
+                ])
 
 
 class DefaultBatchValidationStrategy(BatchValidationStrategy):
-    def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy()):
+    def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy(), log_csv_path: str = "val_log.csv", loss_type: str = LOSS_TYPE):
         self.batch_extractor_strategy = batch_extractor_strategy
+        self.log_csv_path = log_csv_path
+        self.loss_type = loss_type
+        # Ensure CSV file exists with headers
+        if not Path(self.log_csv_path).exists():
+            with open(self.log_csv_path, mode='w', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow(["Batch", "Loss", "Logits", "Predicted Class", "Ground Truth"])
 
-    def validate_batch(self, training_context: TrainingContext, batch) -> ModelResultsAndLabels:
+    def validate_batch(self, training_context: TrainingContext, batch, batch_index: int) -> ModelResultsAndLabels:
         inputs = self.batch_extractor_strategy.get_inputs(batch)
         labels = self.batch_extractor_strategy.get_labels(batch)
         identifiers = self.batch_extractor_strategy.get_identifiers(batch)
-
+        weights = self.batch_extractor_strategy.get_weights(batch)
+        if self.loss_type != 'bce_w_weights':
+            weights = np.ones_like(labels)
         device = training_context.get_device()
 
-        inputs, labels = inputs.to(device), labels.to(device)
+        inputs, labels, weights = inputs.to(device), labels.to(device), weights.to(device)
 
         outputs = training_context.model(inputs)
-        loss = training_context.criterion(outputs, labels)
+        
+        # Compute the per-sample loss before applying reduction
+        per_sample_loss = training_context.criterion(outputs, labels, reduction="none")
+        weighted_loss = per_sample_loss * weights
+        loss = weighted_loss.mean()  # or sum, depending on your setup
+
+        # Log details for each sample in the batch
+        self._log_to_csv(batch_index, weighted_loss, outputs, labels)
 
         return ModelResultsAndLabels(ModelResults(loss.item(), outputs, identifiers), labels)
+
+    def _log_to_csv(self, batch_index, per_sample_loss, outputs, labels):
+        # Calculate predicted classes
+        predicted_classes = (torch.sigmoid(outputs) > 0.5).int()
+
+        # Prepare data for logging
+        with open(self.log_csv_path, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            for i in range(len(labels)):
+                writer.writerow([
+                    batch_index,
+                    per_sample_loss[i].item(),
+                    outputs[i].cpu().detach().numpy(),
+                    predicted_classes[i].cpu().detach().numpy(),
+                    labels[i].cpu().detach().numpy()
+                ])
+
+
+
+
 
 class SamplingStrategy(ABC):
     @abstractmethod
