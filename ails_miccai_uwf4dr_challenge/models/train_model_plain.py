@@ -19,20 +19,20 @@ from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph_plain imp
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_convnext import Task1ConvNeXt
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
 from ails_miccai_uwf4dr_challenge.models.architectures.task2_efficientnetb0_plain import Task2EfficientNetB0
-from ails_miccai_uwf4dr_challenge.models.architectures.task3_efficientnetb0_plain import Task3EfficientNetB0
+from ails_miccai_uwf4dr_challenge.models.architectures.task3_efficientnetb0 import Task3EfficientNetB0
 from ails_miccai_uwf4dr_challenge.models.metrics import sensitivity_score, specificity_score
 from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Metric, MetricCalculatedHook, \
     NumBatches, Trainer, TrainingContext, PersistBestModelOnEpochEndHook, UndersamplingResamplingStrategy, WeightedSamplingStrategy, \
     SamplingStrategy, SigmoidFocalLoss
 
-LEARNING_RATE = 1e-3
-EPOCHS = 15
+LEARNING_RATE = 1e-4
+EPOCHS = 20
 BATCH_SIZE = 8
 MODEL_TYPE = Task3EfficientNetB0() # Task1EfficientNetB4(), Task1ConvNeXt(), ResNet(), Task2EfficientNetB0(), Task3EfficientNetB0()
-LOSS = nn.BCEWithLogitsLoss() # nn.BCEWithLogitsLoss(), SigmoidFocalLoss()
+LOSS = SigmoidFocalLoss(alpha= 0.25, gamma=2)  # nn.BCEWithLogitsLoss(), SigmoidFocalLoss(), nn.BCEWithLogitsLoss(reduction = "none")
 TASK = Task3Strategy() # Task1Strategy(), Task2Strategy(), Task3Strategy()
 DATASET = CombinedDatasetStrategy() # OriginalDatasetStrategy(), CombinedDatasetStrategy()
-LOSS_TYPE = "with_weights" #None
+LOSS_TYPE = "0.25/2" 
 
 
 def train(config=None, data= DATASET, task= TASK, loss=LOSS):
@@ -129,10 +129,11 @@ if __name__ == "__main__":
         "dataset": DATASET,
         "epochs": EPOCHS,
         "batch_size": BATCH_SIZE,
-        "model_type": MODEL_TYPE.__class__.__name__
-        "loss": LOSS.__class__.__name__
-        "task": TASK.__class__.__name__
-        "dataset": DATASET.__class__.__name__
+        "model_type": MODEL_TYPE.__class__.__name__,
+        "loss": LOSS.__class__.__name__,
+        "task": TASK.__class__.__name__,
+        "dataset": DATASET.__class__.__name__,
+        "loss_type": LOSS_TYPE
     }
 
     wandb.login(key=WANDB_API_KEY)

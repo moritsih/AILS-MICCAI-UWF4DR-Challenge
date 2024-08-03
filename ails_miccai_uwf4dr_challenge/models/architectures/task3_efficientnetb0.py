@@ -5,7 +5,7 @@ from pathlib import Path
 
 class Task3EfficientNetB0(nn.Module):
     def __init__(self, num_classes=1):
-        super(Task2EfficientNetB0, self).__init__()
+        super(Task3EfficientNetB0, self).__init__()
         self.num_classes = num_classes
         # Get model and replace the last layer
         self.model = EfficientNet.from_pretrained('efficientnet-b0', num_classes=num_classes)

@@ -415,7 +415,7 @@ import torch
 from pathlib import Path
 
 class DefaultBatchTrainingStrategy(BatchTrainingStrategy):
-    def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy(), log_csv_path: str = "train_log.csv", loss_type: str = LOSS_TYPE):        
+    def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy(), log_csv_path: str = f"train_log.csv", loss_type: str = "focal"):        
         self.batch_extractor_strategy = batch_extractor_strategy
         self.log_csv_path = log_csv_path
         self.loss_type = loss_type
@@ -431,7 +431,7 @@ class DefaultBatchTrainingStrategy(BatchTrainingStrategy):
         identifiers = self.batch_extractor_strategy.get_identifiers(batch)
         weights = self.batch_extractor_strategy.get_weights(batch)
         if self.loss_type != 'bce_w_weights':
-            weights = np.ones_like(labels)
+            weights = torch.ones_like(labels)
 
         device = training_context.get_device()
 
@@ -443,7 +443,7 @@ class DefaultBatchTrainingStrategy(BatchTrainingStrategy):
 
         with training_context.timer.time(Timings.CALC_LOSS):
             # Compute the per-sample loss before applying reduction
-            per_sample_loss = training_context.criterion(outputs, labels, reduction="none")
+            per_sample_loss = training_context.criterion(outputs, labels)
             weighted_loss = per_sample_loss * weights
             loss = weighted_loss.mean()  # or sum, depending on your setup
 
@@ -476,7 +476,7 @@ class DefaultBatchTrainingStrategy(BatchTrainingStrategy):
 
 
 class DefaultBatchValidationStrategy(BatchValidationStrategy):
-    def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy(), log_csv_path: str = "val_log.csv", loss_type: str = LOSS_TYPE):
+    def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy(), log_csv_path: str = "val_log.csv", loss_type: str = "focal"):
         self.batch_extractor_strategy = batch_extractor_strategy
         self.log_csv_path = log_csv_path
         self.loss_type = loss_type
@@ -492,7 +492,7 @@ class DefaultBatchValidationStrategy(BatchValidationStrategy):
         identifiers = self.batch_extractor_strategy.get_identifiers(batch)
         weights = self.batch_extractor_strategy.get_weights(batch)
         if self.loss_type != 'bce_w_weights':
-            weights = np.ones_like(labels)
+            weights = torch.ones_like(labels)
         device = training_context.get_device()
 
         inputs, labels, weights = inputs.to(device), labels.to(device), weights.to(device)
@@ -500,7 +500,7 @@ class DefaultBatchValidationStrategy(BatchValidationStrategy):
         outputs = training_context.model(inputs)
         
         # Compute the per-sample loss before applying reduction
-        per_sample_loss = training_context.criterion(outputs, labels, reduction="none")
+        per_sample_loss = training_context.criterion(outputs, labels)
         weighted_loss = per_sample_loss * weights
         loss = weighted_loss.mean()  # or sum, depending on your setup
 
@@ -608,15 +608,15 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
         training_context.model.train()
         running_loss = 0.0
         total = 0
-        avg_loss = inf
+        avg_loss = float('inf')
         results = ModelResultsAndLabels(ModelResults(avg_loss, [], None), [])
 
         train_loader = self.dataloader_adapter.apply(train_loader)
 
-        with tqdm(train_loader) as pbar:
+        with tqdm(enumerate(train_loader), total=len(train_loader)) as pbar:
             pbar.set_description(f"{training_context.get_epoch_info()} - Starting training... ")
 
-            for batch in pbar:
+            for batch_index, batch in pbar:
                 batch_size = self.get_asserted_batch_size(batch)
                 if training_context.num_batches != NumBatches.ALL and pbar.n >= training_context.num_batches.value:
                     pbar.set_postfix_str(
@@ -624,7 +624,7 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
                     break
 
                 with training_context.timer.time(Timings.BATCH_PROCESSING):
-                    batch_results = self.batch_strategy.train_batch(training_context, batch)
+                    batch_results = self.batch_strategy.train_batch(training_context, batch, batch_index)
                     results.add_batch_results(batch_results)
 
                 loss = batch_results.model_results.loss
@@ -648,6 +648,7 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
         return inputs.size(0)
 
 
+
 class DefaultEpochValidationStrategy(EpochValidationStrategy):
     def __init__(self, batch_strategy=None, dataloader_adapter: DataloaderPerEpochAdapter = None):
         self.batch_strategy = batch_strategy or DefaultBatchValidationStrategy()
@@ -657,23 +658,23 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
         training_context.model.eval()
         running_loss = 0.0
         total = 0
-        avg_loss = inf
+        avg_loss = float('inf')
         results = ModelResultsAndLabels(ModelResults(avg_loss, [], None), [])
 
         val_loader = self.dataloader_adapter.apply(val_loader)
 
         with torch.no_grad():
-            with tqdm(val_loader) as pbar:
+            with tqdm(enumerate(val_loader), total=len(val_loader)) as pbar:
                 pbar.set_description(f"{training_context.get_epoch_info()} - Starting validation...")
-                for batch in pbar:
+                for batch_index, batch in pbar:
                     batch_size = self.get_asserted_batch_size(batch)
                     if training_context.num_batches != NumBatches.ALL and pbar.n >= training_context.num_batches.value:
                         pbar.set_postfix_str(
-                            f"Training for {training_context.num_batches} batches only for initial testing")
+                            f"Validating for {training_context.num_batches} batches only for initial testing")
                         break
 
                     with torch.no_grad():
-                        batch_results = self.batch_strategy.validate_batch(training_context, batch)
+                        batch_results = self.batch_strategy.validate_batch(training_context, batch, batch_index)
                         results.add_batch_results(batch_results)
 
                     loss = batch_results.model_results.loss
@@ -695,6 +696,7 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
         assert inputs.size(0) == labels.size(
             0), f"Batch size mismatch between inputs and labels : {inputs.size(0)} != {labels.size(0)}"
         return inputs.size(0)
+
 
 
 class Trainer:
@@ -755,6 +757,7 @@ class Trainer:
 
         for epoch in range(num_epochs):
             training_context.current_epoch = epoch + 1
+
             model_train_results: ModelResultsAndLabels = self.training_strategy.train(training_context,
                                                                                       self.train_loader)
             model_val_results: ModelResultsAndLabels = self.validation_strategy.validate(training_context,

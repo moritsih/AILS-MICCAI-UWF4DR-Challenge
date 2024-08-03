@@ -255,8 +255,12 @@ class CustomDataset(Dataset):
         label = torch.tensor(label, dtype=torch.float32).unsqueeze(0)
         img = cv2.imread(str(img_path))
         if self.transform:
-            img = self.transform(img)
+            #img = self.transform(img)
+            augmented = self.transform(image=img)
+            img = augmented['image']
+
         return img, label, weight
+
 
 def main():
 
