@@ -10,6 +10,7 @@ from enum import Enum
 import time
 from contextlib import contextmanager
 from torch.utils.data import DataLoader
+import wandb
 
 
 class Timings(Enum):
@@ -292,6 +293,12 @@ class DefaultMetricsEvaluationStrategy(MetricsEvaluationStrategy):
 
     def _sigmoid(self, z):
         return 1 / (1 + np.exp(-z))
+    
+
+class WandbLoggingHook(MetricCalculatedHook):
+    def on_metric_calculated(self, training_context: TrainingContext, metric: Metric, result,
+                                last_metric_for_epoch: bool):
+        wandb.log(data={metric.name: result}, commit=last_metric_for_epoch)
 
 
 class BatchTrainingStrategy(ABC):
@@ -552,7 +559,8 @@ class Loaders:
         self.train_loader = train_loader
         self.val_loader = val_loader
 
-class ModelRunSpecificStuff:
+
+class TrainingRunHardware:
     def __init__(self, model, criterion, optimizer, lr_scheduler):
         assert model is not None
         assert criterion is not None
@@ -563,8 +571,41 @@ class ModelRunSpecificStuff:
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
 
+
+class TrainingRunStartHook(ABC):
+    @abstractmethod
+    def on_training_run_start(self, model, criterion, optimizer, lr_scheduler):
+        pass
+
+class DefaultTrainingRunStartHook(TrainingRunStartHook):
+    def on_training_run_start(self, model, criterion, optimizer, lr_scheduler):
+        return TrainingRunHardware(model, criterion, optimizer, lr_scheduler)
+    
+class CrossValidationTrainingRunStartHook(TrainingRunStartHook):
+    def on_training_run_start(self, model, criterion, optimizer, lr_scheduler):
+        return TrainingRunHardware(model, criterion, optimizer, lr_scheduler)
+    
+
+class TrainingRunEndHook(ABC):
+    @abstractmethod
+    def on_training_run_end(self, model, criterion, optimizer, lr_scheduler):
+        pass
+
+class DefaultTrainingRunEndHook(TrainingRunEndHook):
+    def on_training_run_end(self, training_context: TrainingContext, train_results: ModelResultsAndLabels, val_results: ModelResultsAndLabels):
+        pass
+
+class CrossValidationTrainingRunEndHook(TrainingRunEndHook):
+    def on_training_run_end(self, training_context: TrainingContext):
+        pass
+
+        
+
+
+
+
 class Trainer:
-    def init(self, model_run_specific_stuff: ModelRunSpecificStuff = None, single_train_loader: DataLoader = None, single_val_loader: DataLoader = None, multiple_loaders : List[Loaders] = None, device=None,
+    def init(self, training_run_hardware: TrainingRunHardware = None, single_train_loader: DataLoader = None, single_val_loader: DataLoader = None, multiple_loaders : List[Loaders] = None, device=None,
                  training_strategy: EpochTrainingStrategy = None,
                  validation_strategy: EpochValidationStrategy = None,
                  metrics_eval_strategy: MetricsEvaluationStrategy = None,
@@ -573,8 +614,11 @@ class Trainer:
                  on_training_run_start_hook: Callable = None
             ):
         
+        # if only 1 data fold is provided, we can use single_train_loader and single_val_loader
         if single_train_loader is not None and single_val_loader is not None:
             self.multiple_loaders = [Loaders(single_train_loader, single_val_loader)]
+
+        # if multiple data folds are provided, we can use a list of dataloaders
         elif multiple_loaders is not None:
             self.multiple_loaders = multiple_loaders
             if len(self.multiple_loaders) == 0:
@@ -582,25 +626,31 @@ class Trainer:
         else:                        
             raise ValueError("Either train_loader and val_loader or loaders should be provided")
         
-        if model_run_specific_stuff is None and on_training_run_start_hook is None:
-            raise ValueError("Either model_run_specific_stuff or on_training_run_start_hook should be provided")
+        if training_run_hardware is None and on_training_run_start_hook is None:
+            raise ValueError("Either training_run_hardware or on_training_run_start_hook should be provided")
 
-        self.model_run_specific_stuff = model_run_specific_stuff
+        self.training_run_hardware = training_run_hardware
         self.on_training_run_start_hook = on_training_run_start_hook
 
         self.device = device        
         self.timer = Timer()
+
         self.training_strategy = (training_strategy or
-                                  DefaultEpochTrainingStrategy(DefaultBatchTrainingStrategy(),
-                                                               dataloader_adapter=train_dataloader_adapter))
+                                  DefaultEpochTrainingStrategy(
+                                      DefaultBatchTrainingStrategy(),
+                                      dataloader_adapter=train_dataloader_adapter))
+        
         self.validation_strategy = (validation_strategy or
                                     DefaultEpochValidationStrategy(
                                         DefaultBatchValidationStrategy(),
                                         dataloader_adapter=val_dataloader_adapter))
+        
         self.metrics_eval_strategy = metrics_eval_strategy or DefaultMetricsEvaluationStrategy([])
         self.epoch_end_hooks: List[EpochEndHook] = []
         self.epoch_train_end_hooks: List[EpochTrainEndHook] = []
         self.epoch_validation_end_hooks: List[EpochValidationEndHook] = []
+        self.on_training_run_start_hooks: List[TrainingRunStartHook] = []
+        self.on_training_run_end_hooks: List[TrainingRunEndHook] = []
 
     def add_epoch_end_hook(self, hook: EpochEndHook) -> 'Trainer':
         self.epoch_end_hooks.append(hook)
@@ -613,23 +663,31 @@ class Trainer:
     def add_epoch_train_end_hook(self, hook: EpochTrainEndHook) -> 'Trainer':
         self.epoch_train_end_hooks.append(hook)
         return self
+    
+    def add_training_run_start_hook(self, hook: TrainingRunStartHook) -> 'Trainer':
+        self.on_training_run_start_hooks.append(hook)
+        return self
+    
+    def add_training_run_end_hook(self, hook: TrainingRunEndHook) -> 'Trainer':
+        self.on_training_run_end_hooks.append(hook)
+        return self
 
     def train(self, num_epochs: int, num_batches: NumBatches = NumBatches.ALL):
 
-        for loaders in self.multiple_loaders:
+        for i, loaders in enumerate(self.multiple_loaders):
             
             if self.on_training_run_start_hook:
-                model_run_specific_stuff: ModelRunSpecificStuff = self.on_training_run_start_hook()
+                training_run_hardware: TrainingRunHardware = self.on_training_run_start_hook()
             else:
-                model_run_specific_stuff = self.model_run_specific_stuff
+                training_run_hardware = self.training_run_hardware
                 
-            if model_run_specific_stuff is None:
-                raise ValueError("model_run_specific_stuff must be provided - either directly or via on_training_run_start_hook")
+            if training_run_hardware is None:
+                raise ValueError("training_run_hardware must be provided - either directly or via on_training_run_start_hook")
             
-            model = model_run_specific_stuff.model
-            criterion = model_run_specific_stuff.criterion
-            optimizer = model_run_specific_stuff.optimizer
-            lr_scheduler = model_run_specific_stuff.lr_scheduler
+            model = training_run_hardware.model
+            criterion = training_run_hardware.criterion
+            optimizer = training_run_hardware.optimizer
+            lr_scheduler = training_run_hardware.lr_scheduler
 
             if self.device.type != next(model.parameters()).device.type:
                 print(
@@ -637,8 +695,7 @@ class Trainer:
                     f"from the model's device {next(model.parameters()).device}")
                 model.to(self.device)
 
-            training_context = TrainingContext(model, criterion, optimizer, lr_scheduler, self.timer,
-                                            num_epochs, num_batches)
+            training_context = TrainingContext(model, criterion, optimizer, lr_scheduler, self.timer, num_epochs, num_batches)
 
             # by default, we want to at least print the default losses -
             # you can easily override this by providing some other epoch end hook
@@ -668,3 +725,7 @@ class Trainer:
 
                 for hook in self.epoch_end_hooks:
                     hook.on_epoch_end(training_context, model_train_results, model_val_results)
+
+
+            for hook in self.on_training_run_end_hooks:
+                hook.on_training_run_end(training_context)

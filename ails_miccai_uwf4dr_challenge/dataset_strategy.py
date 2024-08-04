@@ -242,13 +242,14 @@ class TrainAndValData:
     def __init__(self, train_data : CustomDataset, val_data : CustomDataset):
         assert len(train_data) > 0
         assert len(val_data) > 0
-        self.train_data : CustomDataset= train_data
-        self.val_data : CustomDataset= val_data
+        self.train_data : CustomDataset = train_data
+        self.val_data : CustomDataset = val_data
 
 
 class DatasetBuilder:
     def __init__(self, dataset_strategy: DatasetStrategy, 
                  task_strategy: TaskStrategy, split_ratio: float = 0.8, n_folds: int = 1, train_set_transformations=None, val_set_transformations=None):
+        
         self.dataset_strategy = dataset_strategy
         self.task_strategy = task_strategy
         self.split_ratio = split_ratio
@@ -287,20 +288,11 @@ def main():
     task_strategy = Task1Strategy()
 
     # Build dataset
-    builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0.8)
+    builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0.8, n_folds=5)
     train_val_datasets = builder.build()
-    
 
     for train_val_dataset in train_val_datasets:
-        train_data = train_val_dataset.train_data
-        val_data = train_val_dataset.val_data
-
-        # Create PyTorch datasets
-        train_dataset = CustomDataset(train_data)
-        val_dataset = CustomDataset(val_data)
-
-        print("Train dataset size:", len(train_dataset))
-        print("Validation dataset size:", len(val_dataset))
+        print("Train dataset size:", len(train_val_dataset.train_data))
 
 
 if __name__ == "__main__":

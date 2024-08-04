@@ -14,34 +14,19 @@ from ails_miccai_uwf4dr_challenge.config import WANDB_API_KEY
 # data
 from ails_miccai_uwf4dr_challenge.dataset_strategy import CustomDataset, CombinedDatasetStrategy, \
     Task2Strategy, DatasetBuilder, TrainAndValData
+# models
 from ails_miccai_uwf4dr_challenge.models.architectures.ResNets import ResNet, ResNetVariant
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph_plain import AutoMorphModel
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_convnext import Task1ConvNeXt
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
+# metrics
 from ails_miccai_uwf4dr_challenge.models.metrics import sensitivity_score, specificity_score
+# training
 from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Loaders, Metric, MetricCalculatedHook, \
-    NumBatches, Trainer, TrainingContext, PersistBestModelOnEpochEndHook, UndersamplingResamplingStrategy
+    NumBatches, Trainer, TrainingContext, PersistBestModelOnEpochEndHook, UndersamplingResamplingStrategy, OversamplingResamplingStrategy, \
+        TrainingRunHardware, DefaultTrainingRunStartHook, DefaultTrainingRunEndHook, WandbLoggingHook
 
 def train(config=None):
-    dataset_strategy = CombinedDatasetStrategy()
-    task_strategy = Task2Strategy()
-
-    builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0., train_set_transformations=rotate_affine_flip_choice, val_set_transformations=resize_only)
-    train_and_val_data : List[TrainAndValData] = builder.build()
-    
-    loaders = []
-    
-    wandb.init(project="task1", config=config)
-    config = wandb.config
-    
-    for train_val_data in train_and_val_data:        
-        train_loader = DataLoader(train_val_data.train_data, batch_size=config['batch_size'], shuffle=True)
-        val_loader = DataLoader(train_val_data.val_data, batch_size=config['batch_size'], shuffle=False)        
-        loaders.append(Loaders(train_loader, val_loader))
-
-    device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu")  #don't use mps, it takes ages, whyever that is the case!?!
-    print(f"Using device: {device}")
 
     metrics = [
         Metric('auroc', roc_auc_score),
@@ -51,24 +36,45 @@ def train(config=None):
         Metric('specificity', specificity_score)
     ]
 
-    class WandbLoggingHook(MetricCalculatedHook):
-        def on_metric_calculated(self, training_context: TrainingContext, metric: Metric, result,
-                                 last_metric_for_epoch: bool):
-            import wandb
-            wandb.log(data={metric.name: result}, commit=last_metric_for_epoch)
+    dataset_strategy = CombinedDatasetStrategy()
+    task_strategy = Task2Strategy()
 
-    metrics_eval_strategy = DefaultMetricsEvaluationStrategy(metrics).register_metric_calculated_hook(
-        WandbLoggingHook())
+    builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0.8, n_folds=1, 
+                             train_set_transformations=rotate_affine_flip_choice, val_set_transformations=resize_only)
+    
+    train_and_val_data : List[TrainAndValData] = builder.build()
+    
+    loaders = []
+    
+    for i, train_val_data in enumerate(train_and_val_data):    
+
+        training_date = time.strftime("%Y-%m-%d")
+        training_run_grouping = f"{config.model_type}_{training_date}_fold{i+1}" 
+
+        wandb.init(project="task1", config=config, group=training_run_grouping)
+        config = wandb.config
+
+        train_loader = DataLoader(train_val_data.train_data, batch_size=config['batch_size'], shuffle=True)
+        val_loader = DataLoader(train_val_data.val_data, batch_size=config['batch_size'], shuffle=False)        
+        loaders.append(Loaders(train_loader, val_loader))
+
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu")  #don't use mps, it takes ages, whyever that is the case!?!
+    print(f"Using device: {device}")
+
+
+    metrics_eval_strategy = DefaultMetricsEvaluationStrategy(metrics).register_metric_calculated_hook(WandbLoggingHook())
 
     model_run_specific_stuff = create_model_run_specific_stuff(config, device)
 
     #on_training_run_start_hook = function which creates all model run specific stuff and returns it to the trainer
 
-    trainer = Trainer(ModelRunSpecificStuff(model, criterion, optimizer, lr_scheduler), device, multiple_loaders = loaders,
-                      metrics_eval_strategy=metrics_eval_strategy, on_training_run_start_hook=on_training_run_start_hook)
+    model, criterion, optimizer, lr_scheduler = model_run_specific_stuff
+
+    trainer = Trainer(TrainingRunHardware(model, criterion, optimizer, lr_scheduler), device, multiple_loaders = loaders,
+                      metrics_eval_strategy=metrics_eval_strategy, on_training_run_start_hook=DefaultTrainingRunStartHook())
 
     # build a file name for the model weights containing current timestamp and the model class
-    training_date = time.strftime("%Y-%m-%d")
     weight_file_name = f"{config.model_type}_weights_{training_date}_{wandb.run.name}.pth"
     persist_model_hook = PersistBestModelOnEpochEndHook(weight_file_name, print_train_results=True)
     trainer.add_epoch_end_hook(persist_model_hook)
@@ -81,6 +87,7 @@ def train(config=None):
     trainer.train(num_epochs=config["epochs"])
 
     print("Finished training")
+    
 
 def create_model_run_specific_stuff(config, device):
     if config.model_type == 'AutoMorphModel':
@@ -101,6 +108,7 @@ def create_model_run_specific_stuff(config, device):
     criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.AdamW(model.parameters(), lr=config["learning_rate"])
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
+
     return model,criterion,optimizer,lr_scheduler
 
 
