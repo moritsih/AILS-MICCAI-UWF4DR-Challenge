@@ -1,5 +1,6 @@
 import time
 from typing import List
+from faker import Faker
 
 import torch
 import torch.nn as nn
@@ -8,25 +9,69 @@ from sklearn.metrics import roc_auc_score, average_precision_score
 from torch.utils.data import DataLoader
 
 import wandb
-from ails_miccai_uwf4dr_challenge.config import WANDB_API_KEY
+from ails_miccai_uwf4dr_challenge.config import WANDB_API_KEY, Config
 # augmentation
 from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice, resize_only
 # data
 from ails_miccai_uwf4dr_challenge.dataset_strategy import CustomDataset, CombinedDatasetStrategy, \
-    Task2Strategy, DatasetBuilder, TrainAndValData
+    OriginalDatasetStrategy, DeepDridDatasetStrategy, Task1Strategy, Task2Strategy, Task3Strategy, \
+    DatasetBuilder, Loaders, MiniDatasetStrategy
 # models
 from ails_miccai_uwf4dr_challenge.models.architectures.ResNets import ResNet, ResNetVariant
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph_plain import AutoMorphModel
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_convnext import Task1ConvNeXt
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
+from ails_miccai_uwf4dr_challenge.models.architectures.shufflenet import ShuffleNet
 # metrics
 from ails_miccai_uwf4dr_challenge.models.metrics import sensitivity_score, specificity_score
 # training
 from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Loaders, Metric, MetricCalculatedHook, \
     NumBatches, Trainer, TrainingContext, PersistBestModelOnEpochEndHook, UndersamplingResamplingStrategy, OversamplingResamplingStrategy, \
-        TrainingRunHardware, DefaultTrainingRunStartHook, DefaultTrainingRunEndHook, WandbLoggingHook
+    TrainingRunHardware, WandbLoggingHook, InitWandbTrainingStartHook, FinishWandbTrainingEndHook
+
+
+
+def create_training_run_hardware(config, device):
+    '''
+    Use this method to create the model, criterion, optimizer and lr_scheduler for your training run
+    '''
+
+    if config.model_type == 'AutoMorphModel':
+        model = AutoMorphModel()
+    elif config.model_type == 'Task1EfficientNetB4':
+        model = Task1EfficientNetB4()
+    elif config.model_type == 'Task1ConvNeXt':
+        model = Task1ConvNeXt()
+    elif config.model_type == 'ResNet':
+        model = ResNet(model_variant=ResNetVariant.RESNET18)  # or RESNET34, RESNET50
+    elif config.model_type == 'ShuffleNet':
+        model = ShuffleNet()
+    else:
+        raise ValueError(f"Unknown model: {config.model_type}")
+
+    model.to(device)
+
+    print("Training model: ", model.__class__.__name__)
+
+    criterion = nn.BCEWithLogitsLoss()
+    optimizer = optim.AdamW(model.parameters(), lr=config.learning_rate)
+    lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.lr_scheduler_cycle_epochs, eta_min=config.lr_scheduler_min_lr)
+    # lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=config.lr_scheduler_factor, patience=3, verbose=True)
+
+    return TrainingRunHardware(model, criterion, optimizer, lr_scheduler)
+
+
+
 
 def train(config=None):
+
+    assert config is not None, "Config must be provided"
+
+    fake = Faker()
+
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu")  #don't use mps, it takes ages, whyever that is the case!?!
+    print(f"Using device: {device}")
 
     metrics = [
         Metric('auroc', roc_auc_score),
@@ -36,81 +81,52 @@ def train(config=None):
         Metric('specificity', specificity_score)
     ]
 
-    wandb.init(project="task1", config=config, group=training_run_grouping)
-    config = wandb.config
+    dataset_strategy = config.dataset
+    task_strategy = config.task
 
-    dataset_strategy = CombinedDatasetStrategy()
-    task_strategy = Task2Strategy()
-
-    builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0.8, n_folds=config["num_folds"], 
+    builder = DatasetBuilder(dataset_strategy, task_strategy, 
+                             split_ratio=0.8, n_folds=config.num_folds, batch_size=config.batch_size,
                              train_set_transformations=rotate_affine_flip_choice, val_set_transformations=resize_only)
     
-    train_and_val_data : List[TrainAndValData] = builder.build()
-    
-    loaders = []
-    
-    for i, train_val_data in enumerate(train_and_val_data):    
-
-        training_date = time.strftime("%Y-%m-%d")
-        training_run_grouping = f"{config.model_type}_{training_date}_fold{i+1}" 
-
-
-        train_loader = DataLoader(train_val_data.train_data, batch_size=config['batch_size'], shuffle=True)
-        val_loader = DataLoader(train_val_data.val_data, batch_size=config['batch_size'], shuffle=False)        
-        loaders.append(Loaders(train_loader, val_loader))
-
-    device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu" if torch.backends.mps.is_available() else "cpu")  #don't use mps, it takes ages, whyever that is the case!?!
-    print(f"Using device: {device}")
-
+    loaders : List[Loaders] = builder.build()
 
     metrics_eval_strategy = DefaultMetricsEvaluationStrategy(metrics).register_metric_calculated_hook(WandbLoggingHook())
 
-    model_run_specific_stuff = create_training_run_hardware(config, device)
+    model_run_hardware = create_training_run_hardware(config, device)
 
-    #on_training_run_start_hook = function which creates all model run specific stuff and returns it to the trainer
+    trainer = Trainer(model_run_hardware, loaders, device,
+                      metrics_eval_strategy=metrics_eval_strategy,
+                      train_dataloader_adapter=config.resampling_strategy,
+                      val_dataloader_adapter=config.resampling_strategy) 
+    
+    # what should happen when a training run starts?
+    wandb_group_name = fake.word() + "-" + fake.word() + "_grp" # generates a random name for the training run like wandb does
+    wandb_config = config
+    wandb_notes = config.notes
+    wandb_init_hook = InitWandbTrainingStartHook(config.wandb_task, wandb_group_name, wandb_config, wandb_notes)
+    trainer.add_training_run_start_hook(wandb_init_hook)
 
-    model, criterion, optimizer, lr_scheduler = model_run_specific_stuff
-
-    trainer = Trainer(TrainingRunHardware(model, criterion, optimizer, lr_scheduler), device, multiple_loaders = loaders,
-                      metrics_eval_strategy=metrics_eval_strategy, on_training_run_start_hook=DefaultTrainingRunStartHook())
-
+    # what should happend when an epoch ends?
     # build a file name for the model weights containing current timestamp and the model class
-    weight_file_name = f"{config.model_type}_weights_{training_date}_{wandb.run.name}.pth"
-    persist_model_hook = PersistBestModelOnEpochEndHook(weight_file_name, print_train_results=True)
-    trainer.add_epoch_end_hook(persist_model_hook)
+    training_date = time.strftime("%Y-%m-%d")
+    file_name = f"{config.model_type}_weights_{training_date}"
+    model_path = f"models/{wandb_group_name}/{file_name}"
+    persist_model_hook = PersistBestModelOnEpochEndHook(model_path, print_train_results=True)
+    #trainer.add_epoch_end_hook(persist_model_hook)
 
-    #print(
-    #    "First train 2 epochs 2 batches to check if everything works - you can comment these two lines after the code has stabilized...")
-    #trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
+    # what should happen when a training run ends?
+    trainer.add_training_run_end_hook(FinishWandbTrainingEndHook())
 
-    print("Now train train train")
-    trainer.train(num_epochs=config["epochs"])
+
+    # "First train 2 epochs 2 batches to check if everything works - you can comment this line after the code has stabilized..."
+    trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
+
+    #print("Now train train train")
+    #trainer.train(num_epochs=config.epochs)
 
     print("Finished training")
     
 
-def create_training_run_hardware(config, device):
-    if config.model_type == 'AutoMorphModel':
-        model = AutoMorphModel()
-    elif config.model_type == 'Task1EfficientNetB4':
-        model = Task1EfficientNetB4()
-    elif config.model_type == 'Task1ConvNeXt':
-        model = Task1ConvNeXt()
-    elif config.model_type == 'ResNet':
-        model = ResNet(model_variant=ResNetVariant.RESNET18)  # or RESNET34, RESNET50
-    else:
-        raise ValueError(f"Unknown model: {config.model_type}")
-
-    model.to(device)
-
-    print("Training model: ", model.__class__.__name__)
-
-    criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=config["learning_rate"])
-    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
-
-    return model, criterion, optimizer, lr_scheduler
 
 
 if __name__ == "__main__":
@@ -119,17 +135,26 @@ if __name__ == "__main__":
 
     LEARNING_RATE = 1e-3
     EPOCHS = 15
-    NUM_FOLDS = 1
+    NUM_FOLDS = 3
+    BATCH_SIZE = 4
 
-    config = {
-        "learning_rate": LEARNING_RATE,
-        "dataset": "UWF4DR-DEEPDRID",
-        "epochs": EPOCHS,
-        "num_folds": NUM_FOLDS,
-        "batch_size": 4,
-        "model_type": Task1ConvNeXt().__class__.__name__
-    }
+    config = Config(
+        learning_rate=LEARNING_RATE,
+        dataset=MiniDatasetStrategy(), #CombinedDatasetStrategy(),
+        task=Task2Strategy(),
+        epochs=EPOCHS,
+        num_folds=NUM_FOLDS,
+        batch_size=BATCH_SIZE,
+        lr_scheduler_factor=0.5, # lr reduction multiplicative factor for ReduceLRonPlateau
+        lr_scheduler_cycle_epochs=7, # cosine annealing cycle length
+        lr_scheduler_min_lr=1e-6, # minimum learning rate for cosine annealing
+        model_type=ShuffleNet().__class__.__name__,
+        wandb_task="test", # or task2 or task3
+        notes="Shufflenet with 4 batch size", # use this field to describe the experiment - it will show up in wandb,
+        resampling_strategy=OversamplingResamplingStrategy() # or UndersamplingResamplingStrategy()
+    )
 
     wandb.login(key=WANDB_API_KEY)
 
     train(config)
+

@@ -26,3 +26,4 @@ typer
 gdown
 cryptography
 pytest
+faker

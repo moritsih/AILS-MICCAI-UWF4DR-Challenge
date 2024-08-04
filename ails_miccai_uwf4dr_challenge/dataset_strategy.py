@@ -7,7 +7,7 @@ import cv2
 from ails_miccai_uwf4dr_challenge.config import PROCESSED_DATA_DIR, RAW_DATA_DIR, EXTERNAL_DATA_DIR
 from sklearn.model_selection import train_test_split
 import torch
-from torch.utils.data import Dataset, WeightedRandomSampler
+from torch.utils.data import Dataset, DataLoader
 from abc import ABC, abstractmethod
 from sklearn.model_selection import KFold
 
@@ -238,47 +238,61 @@ class CustomDataset(Dataset):
                 img = self.transform(image=img)['image'] # when using Albumentations
         return img, label    
 
-class TrainAndValData:
-    def __init__(self, train_data : CustomDataset, val_data : CustomDataset):
-        assert len(train_data) > 0
-        assert len(val_data) > 0
-        self.train_data : CustomDataset = train_data
-        self.val_data : CustomDataset = val_data
+
+class Loaders:
+    def __init__(self, train_loader : DataLoader, val_loader : DataLoader):
+        assert len(train_loader.dataset) > 0
+        assert len(val_loader.dataset) > 0
+        self.train_loader : DataLoader = train_loader
+        self.val_loader : DataLoader = val_loader
 
 
 class DatasetBuilder:
     def __init__(self, dataset_strategy: DatasetStrategy, 
-                 task_strategy: TaskStrategy, split_ratio: float = 0.8, n_folds: int = 1, train_set_transformations=None, val_set_transformations=None):
+                 task_strategy: TaskStrategy, 
+                 batch_size: int, 
+                 train_dataloader_shuffle: bool = True,
+                 val_dataloader_shuffle: bool = False,
+                 split_ratio: float = 0.8, n_folds: int = 1, 
+                 train_set_transformations=None, val_set_transformations=None):
         
         self.dataset_strategy = dataset_strategy
         self.task_strategy = task_strategy
         self.split_ratio = split_ratio
         self.n_folds = n_folds
+        self.batch_size = batch_size
+        self.train_dataloader_shuffle = train_dataloader_shuffle
+        self.val_dataloader_shuffle = val_dataloader_shuffle
         self.train_set_transformations = train_set_transformations
         self.val_set_transformations = val_set_transformations
 
-    def build(self) -> List[TrainAndValData]:
+    def build(self) -> List[Loaders]:
 
-        train_val_data = []    
+        loaders = []    
 
         data = self.dataset_strategy.get_data()
         data = self.task_strategy.apply(data)
 
         if self.n_folds == 1:
             train_data, val_data = train_test_split(data, test_size=1-self.split_ratio, random_state=42, stratify=data.iloc[:, 1])
-            train_val_data.append(TrainAndValData(CustomDataset(train_data), CustomDataset(val_data)))
+            train_loader = DataLoader(CustomDataset(train_data, self.train_set_transformations), batch_size=self.batch_size, shuffle=self.train_dataloader_shuffle)
+            val_loader = DataLoader(CustomDataset(train_data, self.train_set_transformations), batch_size=self.batch_size, shuffle=self.val_dataloader_shuffle)
+
+            loaders.append(Loaders(train_loader, val_loader))
 
         elif self.n_folds > 1:
             kf = KFold(n_splits=self.n_folds, shuffle=True, random_state=42)
 
             for train_index, test_index in kf.split(data):
                 train_data, val_data = data.iloc[train_index], data.iloc[test_index]
-                train_val_data.append(TrainAndValData(CustomDataset(train_data, self.train_set_transformations), CustomDataset(val_data, self.val_set_transformations)))
+                train_loader = DataLoader(CustomDataset(train_data, self.train_set_transformations), batch_size=self.batch_size, shuffle=self.train_dataloader_shuffle)
+                val_loader = DataLoader(CustomDataset(val_data, self.val_set_transformations), batch_size=self.batch_size, shuffle=self.val_dataloader_shuffle)
+                loaders.append(Loaders(train_loader, val_loader))
         else:
             raise ValueError("n_folds must be a positive integer")
 
-        assert len(train_val_data) == self.n_folds
-        return train_val_data
+        assert len(loaders) == self.n_folds
+        return loaders
 
 
 def main():
@@ -288,11 +302,11 @@ def main():
     task_strategy = Task1Strategy()
 
     # Build dataset
-    builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0.8, n_folds=5)
-    train_val_datasets = builder.build()
+    builder = DatasetBuilder(dataset_strategy, task_strategy, batch_size=16, split_ratio=0.8, n_folds=1)
+    loaderssets = builder.build()
 
-    for train_val_dataset in train_val_datasets:
-        print("Train dataset size:", len(train_val_dataset.train_data))
+    for loadersset in loaderssets:
+        print("Train dataset size:", len(loadersset.train_loader.dataset))
 
 
 if __name__ == "__main__":
