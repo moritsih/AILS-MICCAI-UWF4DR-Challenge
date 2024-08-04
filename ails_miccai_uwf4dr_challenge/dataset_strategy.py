@@ -1,14 +1,16 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
-
-import cv2
-import numpy as np
+from typing import List
 import pandas as pd
+import numpy as np
+import cv2
 import torch
+from torch.utils.data import Dataset, DataLoader
+from abc import ABC, abstractmethod
+from sklearn.model_selection import KFold
 from sklearn.model_selection import train_test_split
-from torch.utils.data import Dataset
-
 from ails_miccai_uwf4dr_challenge.config import RAW_DATA_DIR, EXTERNAL_DATA_DIR
+
 
 # add seeds
 torch.manual_seed(42)
@@ -259,7 +261,64 @@ class CustomDataset(Dataset):
         except KeyError:
             if self.transform:
                 img = self.transform(image=img)['image'] # when using Albumentations
-        return img, label
+        return img, label    
+
+
+class Loaders:
+    def __init__(self, train_loader : DataLoader, val_loader : DataLoader):
+        assert len(train_loader.dataset) > 0
+        assert len(val_loader.dataset) > 0
+        self.train_loader : DataLoader = train_loader
+        self.val_loader : DataLoader = val_loader
+
+
+class DatasetBuilder:
+    def __init__(self, dataset_strategy: DatasetStrategy, 
+                 task_strategy: TaskStrategy, 
+                 batch_size: int, 
+                 train_dataloader_shuffle: bool = True,
+                 val_dataloader_shuffle: bool = False,
+                 split_ratio: float = 0.8, n_folds: int = 1, 
+                 train_set_transformations=None, val_set_transformations=None):
+        
+        self.dataset_strategy = dataset_strategy
+        self.task_strategy = task_strategy
+        self.split_ratio = split_ratio
+        self.n_folds = n_folds
+        self.batch_size = batch_size
+        self.train_dataloader_shuffle = train_dataloader_shuffle
+        self.val_dataloader_shuffle = val_dataloader_shuffle
+        self.train_set_transformations = train_set_transformations
+        self.val_set_transformations = val_set_transformations
+
+    def build(self) -> List[Loaders]:
+
+        loaders = []    
+
+        data = self.dataset_strategy.get_data()
+        data = self.task_strategy.apply(data)
+
+        if self.n_folds == 1:
+            train_data, val_data = train_test_split(data, test_size=1-self.split_ratio, random_state=42, stratify=data.iloc[:, 1])
+            train_loader = DataLoader(CustomDataset(train_data, self.train_set_transformations), batch_size=self.batch_size, shuffle=self.train_dataloader_shuffle)
+            val_loader = DataLoader(CustomDataset(train_data, self.train_set_transformations), batch_size=self.batch_size, shuffle=self.val_dataloader_shuffle)
+
+            loaders.append(Loaders(train_loader, val_loader))
+
+        elif self.n_folds > 1:
+            kf = KFold(n_splits=self.n_folds, shuffle=True, random_state=42)
+
+            for train_index, test_index in kf.split(data):
+                train_data, val_data = data.iloc[train_index], data.iloc[test_index]
+                train_loader = DataLoader(CustomDataset(train_data, self.train_set_transformations), batch_size=self.batch_size, shuffle=self.train_dataloader_shuffle)
+                val_loader = DataLoader(CustomDataset(val_data, self.val_set_transformations), batch_size=self.batch_size, shuffle=self.val_dataloader_shuffle)
+                loaders.append(Loaders(train_loader, val_loader))
+        else:
+            raise ValueError("n_folds must be a positive integer")
+
+        assert len(loaders) == self.n_folds
+        return loaders
+
 
 
 def main():
@@ -268,15 +327,11 @@ def main():
     task_strategy = Task1Strategy()
 
     # Build dataset
-    builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0.8)
-    train_data, val_data = builder.build()
+    builder = DatasetBuilder(dataset_strategy, task_strategy, batch_size=16, split_ratio=0.8, n_folds=1)
+    loaderssets = builder.build()
 
-    # Create PyTorch datasets
-    train_dataset = CustomDataset(train_data)
-    val_dataset = CustomDataset(val_data)
-
-    print("Train dataset size:", len(train_dataset))
-    print("Validation dataset size:", len(val_dataset))
+    for loadersset in loaderssets:
+        print("Train dataset size:", len(loadersset.train_loader.dataset))
 
 
 if __name__ == "__main__":

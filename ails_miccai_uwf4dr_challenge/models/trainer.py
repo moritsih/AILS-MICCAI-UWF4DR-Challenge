@@ -6,9 +6,14 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
+import os
 from enum import Enum
 import time
 from contextlib import contextmanager
+from torch.utils.data import DataLoader
+from torch.optim import lr_scheduler
+import wandb
+from ails_miccai_uwf4dr_challenge.dataset_strategy import Loaders
 
 
 class Timings(Enum):
@@ -186,6 +191,8 @@ class DefaultEpochEndHook(EpochEndHook):
 class PersistBestModelOnEpochEndHook(EpochEndHook):
     def __init__(self, save_path, print_train_results: bool = True):
         self.save_path = save_path
+        os.makedirs(os.path.dirname(self.save_path), exist_ok=True)
+
         self.best_val_loss = float('inf')
         self.print_train_results = print_train_results
 
@@ -194,7 +201,10 @@ class PersistBestModelOnEpochEndHook(EpochEndHook):
         current_val_loss = val_results.model_results.loss
         if current_val_loss < self.best_val_loss:
             self.best_val_loss = current_val_loss
-            torch.save(training_context.model.state_dict(), self.save_path)
+            # check how many files are in the save_folder
+            num_fold = len(os.listdir(os.path.dirname(self.save_path))) + 1 # +1 because we save the 1st fold when there are 0 files
+
+            torch.save(training_context.model.state_dict(), self.save_path + f"_fold_{num_fold}.pth")
             print(
                 f"New best weights found at epoch {training_context.current_epoch} with validation loss: {current_val_loss:.4f}. Model saved to {self.save_path}")
 
@@ -231,24 +241,36 @@ class MetricCalculatedHook(ABC):
                              last_metric_for_epoch: bool):
         pass
 
+class WandbLoggingHook(MetricCalculatedHook):
+    def on_metric_calculated(self, training_context: TrainingContext, metric: Metric, result,
+                                last_metric_for_epoch: bool):
+        wandb.log(data={metric.name: result}, commit=last_metric_for_epoch)
 
-class LossMetricNames(enum.Enum):
+
+class OtherMetricNames(enum.Enum):
     TRAIN_LOSS = "avg_train_loss"
     VAL_LOSS = "avg_val_loss"
+    LEARNING_RATE = "learning_rate"
 
 
 class DefaultMetricsEvaluationStrategy(MetricsEvaluationStrategy):
 
-    def __init__(self, metrics: List[Metric], add_losses_as_metrics: bool = True):
+    def __init__(self, metrics: List[Metric], add_losses_as_metrics: bool = True, add_lr_as_metric: bool = True):
         assert metrics is not None
         self.metrics = metrics
         if add_losses_as_metrics:
-            self.metrics.append(Metric(LossMetricNames.TRAIN_LOSS.value, lambda y_true, y_pred: 0,
+            self.metrics.append(Metric(OtherMetricNames.TRAIN_LOSS.value, lambda y_true, y_pred: 0,
                                        meta_info=MetricsMetaInfo(print_in_summary=True, print_in_progress=True,
                                                                  evaluate_per_epoch=False, evaluate_per_batch=False)))
-            self.metrics.append(Metric(LossMetricNames.VAL_LOSS.value, lambda y_true, y_pred: 0,
+            self.metrics.append(Metric(OtherMetricNames.VAL_LOSS.value, lambda y_true, y_pred: 0,
                                        meta_info=MetricsMetaInfo(print_in_summary=True, print_in_progress=True,
                                                                  evaluate_per_epoch=False, evaluate_per_batch=False)))
+            
+        if add_lr_as_metric:
+            self.metrics.append(Metric(OtherMetricNames.LEARNING_RATE.value, lambda y_true, y_pred: 0,
+                                       meta_info=MetricsMetaInfo(print_in_summary=True, print_in_progress=False,
+                                                                 evaluate_per_epoch=False, evaluate_per_batch=False)))
+            
         self.metric_calculated_hooks: List[MetricCalculatedHook] = []
 
     def evaluate(self, training_context: TrainingContext, model_train_results: ModelResultsAndLabels,
@@ -264,12 +286,16 @@ class DefaultMetricsEvaluationStrategy(MetricsEvaluationStrategy):
             result = None
             last_metric_for_epoch = (i == len(self.metrics) - 1)
 
-            if metric.name == LossMetricNames.TRAIN_LOSS.value:
+            if metric.name == OtherMetricNames.TRAIN_LOSS.value:
                 result = model_train_results.model_results.loss
                 results[metric.name] = MetricResult(metric.name, result)
                 notify_hooks = True
-            elif metric.name == LossMetricNames.VAL_LOSS.value:
+            elif metric.name == OtherMetricNames.VAL_LOSS.value:
                 result = model_val_results.model_results.loss
+                results[metric.name] = MetricResult(metric.name, result)
+                notify_hooks = True
+            elif metric.name == OtherMetricNames.LEARNING_RATE.value:
+                result = training_context.optimizer.param_groups[0]['lr']
                 results[metric.name] = MetricResult(metric.name, result)
                 notify_hooks = True
             elif metric.meta_info.evaluate_per_epoch:
@@ -296,6 +322,7 @@ class DefaultMetricsEvaluationStrategy(MetricsEvaluationStrategy):
 
     def _sigmoid(self, z):
         return 1 / (1 + np.exp(-z))
+    
 
 
 class BatchTrainingStrategy(ABC):
@@ -549,36 +576,95 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
         assert inputs.size(0) == labels.size(
             0), f"Batch size mismatch between inputs and labels : {inputs.size(0)} != {labels.size(0)}"
         return inputs.size(0)
+    
 
 
-class Trainer:
-    def __init__(self, model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device=None,
-                 training_strategy: EpochTrainingStrategy = None,
-                 validation_strategy: EpochValidationStrategy = None,
-                 metrics_eval_strategy: MetricsEvaluationStrategy = None,
-                 train_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
-                 val_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter()):
-
+class TrainingRunHardware:
+    def __init__(self, model, criterion, optimizer, lr_scheduler):
         assert model is not None
+        assert criterion is not None
+        assert optimizer is not None
+        assert lr_scheduler is not None
         self.model = model
-        self.train_loader = train_loader
-        self.val_loader = val_loader
         self.criterion = criterion
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
-        self.device = device or next(model.parameters()).device
+
+
+
+class TrainingRunStartHook(ABC):
+    @abstractmethod
+    def on_training_run_start(self, wandb_task, wandb_groupname, wandb_config, wandb_notes):
+        pass
+
+class InitWandbTrainingStartHook(TrainingRunStartHook):
+
+    def __init__(self, wandb_task=None, wandb_groupname=None, wandb_config=None, wandb_notes=None):
+        assert wandb_task is not None, "wandb_task must be provided"
+        assert wandb_groupname is not None, "wandb_groupname must be provided"
+        assert wandb_config is not None, "wandb_config must be provided"
+        self.wandb_task = wandb_task
+        self.wandb_groupname = wandb_groupname
+        self.wandb_config = wandb_config
+        self.wandb_notes = wandb_notes
+
+    def on_training_run_start(self):
+        wandb.init(project=self.wandb_task, config=self.wandb_config, group=self.wandb_groupname, notes=self.wandb_notes)
+        wandb.config = self.wandb_config
+
+
+class TrainingRunEndHook(ABC):
+    @abstractmethod
+    def on_training_run_end(self):
+        pass
+
+class FinishWandbTrainingEndHook(TrainingRunEndHook):
+    def on_training_run_end(self):
+        wandb.finish()
+
+
+class Trainer:
+    def __init__(self, 
+                training_run_hardware: TrainingRunHardware = None, 
+                loaders : List[Loaders] = None,
+                device=None,
+                training_strategy: EpochTrainingStrategy = None,
+                validation_strategy: EpochValidationStrategy = None,
+                metrics_eval_strategy: MetricsEvaluationStrategy = None,
+                train_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
+                val_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter()
+                ):
+        
+        if loaders is not None:
+            if len(loaders) == 0:
+                raise ValueError("At least one Loader must be provided")
+            else:
+                self.loaders = loaders
+
+        if training_run_hardware is None:
+            raise ValueError("Must provide training run hardware with model, criterion, optimizer, and lr scheduler")
+
+        self.training_run_hardware = training_run_hardware
+
+        self.device = device        
         self.timer = Timer()
+
         self.training_strategy = (training_strategy or
-                                  DefaultEpochTrainingStrategy(DefaultBatchTrainingStrategy(),
-                                                               dataloader_adapter=train_dataloader_adapter))
+                                  DefaultEpochTrainingStrategy(
+                                      DefaultBatchTrainingStrategy(),
+                                      dataloader_adapter=train_dataloader_adapter))
+        
         self.validation_strategy = (validation_strategy or
                                     DefaultEpochValidationStrategy(
                                         DefaultBatchValidationStrategy(),
                                         dataloader_adapter=val_dataloader_adapter))
+        
         self.metrics_eval_strategy = metrics_eval_strategy or DefaultMetricsEvaluationStrategy([])
         self.epoch_end_hooks: List[EpochEndHook] = []
         self.epoch_train_end_hooks: List[EpochTrainEndHook] = []
         self.epoch_validation_end_hooks: List[EpochValidationEndHook] = []
+        self.training_run_start_hooks: List[TrainingRunStartHook] = []
+        self.training_run_end_hooks: List[TrainingRunEndHook] = []
 
     def add_epoch_end_hook(self, hook: EpochEndHook) -> 'Trainer':
         self.epoch_end_hooks.append(hook)
@@ -591,42 +677,66 @@ class Trainer:
     def add_epoch_train_end_hook(self, hook: EpochTrainEndHook) -> 'Trainer':
         self.epoch_train_end_hooks.append(hook)
         return self
+    
+    def add_training_run_start_hook(self, hook: TrainingRunStartHook) -> 'Trainer':
+        self.training_run_start_hooks.append(hook)
+        return self
+    
+    def add_training_run_end_hook(self, hook: TrainingRunEndHook) -> 'Trainer':
+        self.training_run_end_hooks.append(hook)
+        return self
+
 
     def train(self, num_epochs: int, num_batches: NumBatches = NumBatches.ALL):
-        if self.device.type != next(self.model.parameters()).device.type:
+    
+        model = self.training_run_hardware.model
+        criterion = self.training_run_hardware.criterion
+        optimizer = self.training_run_hardware.optimizer
+        lr_scheduler = self.training_run_hardware.lr_scheduler
+
+        if self.device.type != next(model.parameters()).device.type:
             print(
                 f"Moving model to device {self.device}, because it is different "
-                f"from the model's device {next(self.model.parameters()).device}")
-            self.model.to(self.device)
-
-        training_context = TrainingContext(self.model, self.criterion, self.optimizer, self.lr_scheduler, self.timer,
-                                           num_epochs, num_batches)
+                f"from the model's device {next(model.parameters()).device}")
+            model.to(self.device)
 
         # by default, we want to at least print the default losses -
         # you can easily override this by providing some other epoch end hook
         if not self.epoch_end_hooks:
             self.epoch_end_hooks.append(DefaultEpochEndHook())
 
-        for epoch in range(num_epochs):
-            training_context.current_epoch = epoch + 1
-            model_train_results: ModelResultsAndLabels = self.training_strategy.train(training_context,
-                                                                                      self.train_loader)
-            model_val_results: ModelResultsAndLabels = self.validation_strategy.validate(training_context,
-                                                                                         self.val_loader)
 
-            if self.lr_scheduler is not None:
-                if isinstance(self.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                    self.lr_scheduler.step(model_val_results.model_results.loss)
-                else:
-                    self.lr_scheduler.step()
+        for i, loaders in enumerate(self.loaders):
 
-            for hook in self.epoch_train_end_hooks:
-                hook.on_epoch_train_end(training_context, model_train_results)
+            for hook in self.training_run_start_hooks:
+                hook.on_training_run_start()
 
-            for hook in self.epoch_validation_end_hooks:
-                hook.on_epoch_validation_end(training_context, model_val_results)
+            training_context = TrainingContext(model, criterion, optimizer, lr_scheduler, self.timer, num_epochs, num_batches)
 
-            self.metrics_eval_strategy.evaluate(training_context, model_train_results, model_val_results)
+            for epoch in range(num_epochs):
+                training_context.current_epoch = epoch + 1
+                model_train_results: ModelResultsAndLabels = self.training_strategy.train(training_context,
+                                                                                        loaders.train_loader)
+                model_val_results: ModelResultsAndLabels = self.validation_strategy.validate(training_context,
+                                                                                        loaders.val_loader)
+                
+                if training_context.lr_scheduler is not None:
+                    if isinstance(training_context.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                        training_context.lr_scheduler.step(model_val_results.model_results.loss)
+                    else:
+                        training_context.lr_scheduler.step()
 
-            for hook in self.epoch_end_hooks:
-                hook.on_epoch_end(training_context, model_train_results, model_val_results)
+                for hook in self.epoch_train_end_hooks:
+                    hook.on_epoch_train_end(training_context, model_train_results)
+
+                for hook in self.epoch_validation_end_hooks:
+                    hook.on_epoch_validation_end(training_context, model_val_results)
+
+                self.metrics_eval_strategy.evaluate(training_context, model_train_results, model_val_results)
+
+                for hook in self.epoch_end_hooks:
+                    hook.on_epoch_end(training_context, model_train_results, model_val_results)
+            
+            for hook in self.training_run_end_hooks:
+                hook.on_training_run_end()
+

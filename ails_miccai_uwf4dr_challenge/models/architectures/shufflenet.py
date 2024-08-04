@@ -10,10 +10,20 @@ class ShuffleNet(nn.Module):
 
         self.model = torch.hub.load('pytorch/vision:v0.10.0', 'shufflenet_v2_x1_0', pretrained=pretrained)
 
-        # Change the output layer to have num_classes output features
-        self.model.fc = nn.Linear(self.model.fc.in_features, num_classes)
-        
-        print(f"Number of output features in ShuffleNet encoder: ", self.model.fc.out_features)
+        net_fl = nn.Sequential(
+            nn.Linear(self.model.fc.in_features, 512),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Dropout(p=0.3),
+            nn.Linear(256, 64),
+            nn.ReLU(),
+            nn.Dropout(p=0.3),
+            nn.Linear(64, num_classes)
+        )
+
+        self.model.fc = net_fl
         
 
     def forward(self, x):

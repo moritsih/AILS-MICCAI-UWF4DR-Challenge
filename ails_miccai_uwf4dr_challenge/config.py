@@ -1,6 +1,7 @@
 from pathlib import Path
 from dotenv import load_dotenv
 from loguru import logger
+import enum
 
 # Load environment variables from .env file if it exists
 load_dotenv()
@@ -36,3 +37,4 @@ try:
     logger.add(lambda msg: tqdm.write(msg, end=""), colorize=True)
 except ModuleNotFoundError:
     pass
+
