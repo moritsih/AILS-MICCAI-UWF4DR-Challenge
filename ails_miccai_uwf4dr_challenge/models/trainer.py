@@ -11,10 +11,10 @@ import time
 from contextlib import contextmanager
 from torch.utils.data import WeightedRandomSampler
 
-import torch
 import torch.nn.functional as F
 
-
+import csv
+from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -341,7 +341,7 @@ class DefaultMetricsEvaluationStrategy(MetricsEvaluationStrategy):
         return results
 
     def register_metric_calculated_hook(self,
-                                        metric_calculated_hook: MetricCalculatedHook) -> 'DefaultMetricsEvaluationStrategy':
+        metric_calculated_hook: MetricCalculatedHook) -> 'DefaultMetricsEvaluationStrategy':
         assert metric_calculated_hook is not None
         self.metric_calculated_hooks.append(metric_calculated_hook)
         return self
@@ -410,12 +410,10 @@ class DefaultDataBatchExtractorStrategy(DataBatchExtractorStrategy):
         # providing identifiers for better debugging and analysis
         return None
 
-import csv
-import torch
-from pathlib import Path
+
 
 class DefaultBatchTrainingStrategy(BatchTrainingStrategy):
-    def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy(), log_csv_path: str = f"train_log.csv", loss_type: str = "focal"):        
+    def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy(), log_csv_path: str = f"train_log.csv", loss_type: str = "bce"):        
         self.batch_extractor_strategy = batch_extractor_strategy
         self.log_csv_path = log_csv_path
         self.loss_type = loss_type
@@ -468,7 +466,7 @@ class DefaultBatchTrainingStrategy(BatchTrainingStrategy):
             for i in range(len(labels)):
                 writer.writerow([
                     batch_index,
-                    per_sample_loss[i].item(),
+                    per_sample_loss[i].mean().item() if per_sample_loss[i].dim() > 0 else per_sample_loss[i].item(),
                     outputs[i].cpu().detach().numpy(),
                     predicted_classes[i].cpu().detach().numpy(),
                     labels[i].cpu().detach().numpy()
@@ -476,7 +474,7 @@ class DefaultBatchTrainingStrategy(BatchTrainingStrategy):
 
 
 class DefaultBatchValidationStrategy(BatchValidationStrategy):
-    def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy(), log_csv_path: str = "val_log.csv", loss_type: str = "focal"):
+    def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy(), log_csv_path: str = "val_log.csv", loss_type: str = "bce"):
         self.batch_extractor_strategy = batch_extractor_strategy
         self.log_csv_path = log_csv_path
         self.loss_type = loss_type
@@ -519,7 +517,7 @@ class DefaultBatchValidationStrategy(BatchValidationStrategy):
             for i in range(len(labels)):
                 writer.writerow([
                     batch_index,
-                    per_sample_loss[i].item(),
+                    per_sample_loss[i].mean().item() if per_sample_loss[i].dim() > 0 else per_sample_loss[i].item(),
                     outputs[i].cpu().detach().numpy(),
                     predicted_classes[i].cpu().detach().numpy(),
                     labels[i].cpu().detach().numpy()

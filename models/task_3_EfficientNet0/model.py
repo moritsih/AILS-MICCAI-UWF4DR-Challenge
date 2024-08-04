@@ -4,11 +4,13 @@ from efficientnet_pytorch import EfficientNet
 from torchvision import transforms
 import cv2 
 #from torchvision.transforms import v2
+from skimage import restoration
 
 import numpy as np
 from albumentations.core.transforms_interface import ImageOnlyTransform
 import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
+
 
 def remove_prefix(state_dict, prefix):
     """
@@ -58,10 +60,12 @@ class model:
         :return: a float value indicating the probability of class 1.
         """
         # apply the same transformations as during validation
-        """transform = transforms.Compose([
+        """ transform = transforms.Compose([
             transforms.ToPILImage(),
             transforms.ToTensor(),
-            transforms.Grayscale(num_output_channels=3),
+            #transforms.Grayscale(num_output_channels=3),
+            GreenChannelEnhancement(),  # Apply Wiener filter and CLAHE
+
             #v2.ColorJitter(brightness=0.5, contrast=0.4, saturation=0.3, hue=0.3),
             #v2.RandomHorizontalFlip(),
             #v2.RandomVerticalFlip(),
@@ -69,11 +73,15 @@ class model:
             #v2.RandomAffine(degrees=0, translate=(0.1, 0.1)),
             transforms.Resize(size=(800, 1016), antialias=True),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])"""
+        
         transform = A.Compose([
             A.Resize(800, 1016),
             #MultiplyMask(),
             #A.ToGray(),
+            A.Equalize(),
+
             A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+
             ToTensorV2()
         ])
 
@@ -134,3 +142,36 @@ def remove_prefix_in_state_dict(state_dict, prefix):
     Remove the prefix from state_dict keys.
     """
     return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
+
+class GreenChannelEnhancement:
+    def __call__(self, img):
+        # Convert to numpy array if it's a tensor
+        if isinstance(img, torch.Tensor):
+            img = img.numpy().transpose((1, 2, 0))
+
+        # Ensure the image is in the correct format
+        img = img.astype(np.float32)
+
+        # Separate the channels
+        r, g, b = cv2.split(img)
+
+        # Apply Wiener filter to the green channel
+        psf = np.ones((5, 5)) / 25
+        g_filtered = restoration.wiener(g, psf, balance=0.1)
+
+        # Apply CLAHE to the filtered green channel
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        g_enhanced = clahe.apply((g_filtered * 255).astype(np.uint8))
+        g_enhanced = g_enhanced / 255.0  # Normalize back to range [0, 1]
+
+        # Ensure all channels are the same type
+        r = r.astype(np.float32)
+        g_enhanced = g_enhanced.astype(np.float32)
+        b = b.astype(np.float32)
+
+        # Merge the enhanced green channel back with the original red and blue channels
+        enhanced_img = cv2.merge((r, g_enhanced, b))
+
+        # Convert back to tensor
+        enhanced_img = torch.from_numpy(enhanced_img.transpose((2, 0, 1)))
+        return enhanced_img

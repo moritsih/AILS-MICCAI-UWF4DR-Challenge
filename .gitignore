@@ -7,10 +7,14 @@
 models/AutoMorph/*.pth
 models/example_submission/*.pth
 models/EfficientNet/*.pth
+models/task_3_EfficientNet0/*.pth
+*.pth
+
 # logs
 wandb/
 notebooks/wandb/
 lightning_logs/
+
 
 # Mac OS-specific storage files
 .DS_Store

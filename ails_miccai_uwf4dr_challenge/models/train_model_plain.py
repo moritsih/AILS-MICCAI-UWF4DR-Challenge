@@ -29,9 +29,9 @@ LEARNING_RATE = 1e-4
 EPOCHS = 20
 BATCH_SIZE = 8
 MODEL_TYPE = Task3EfficientNetB0() # Task1EfficientNetB4(), Task1ConvNeXt(), ResNet(), Task2EfficientNetB0(), Task3EfficientNetB0()
-LOSS = SigmoidFocalLoss(alpha= 0.25, gamma=2)  # nn.BCEWithLogitsLoss(), SigmoidFocalLoss(), nn.BCEWithLogitsLoss(reduction = "none")
+LOSS =  SigmoidFocalLoss(alpha=0.25, gamma= 2) # nn.BCEWithLogitsLoss(), SigmoidFocalLoss(), nn.BCEWithLogitsLoss(reduction = "none")
 TASK = Task3Strategy() # Task1Strategy(), Task2Strategy(), Task3Strategy()
-DATASET = CombinedDatasetStrategy() # OriginalDatasetStrategy(), CombinedDatasetStrategy()
+DATASET = OriginalDatasetStrategy() # OriginalDatasetStrategy(), CombinedDatasetStrategy()
 LOSS_TYPE = "0.25/2" 
 
 
@@ -94,13 +94,15 @@ def train(config=None, data= DATASET, task= TASK, loss=LOSS):
 
     criterion = loss
     optimizer = optim.AdamW(model.parameters(), lr=config["learning_rate"])
-    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
+    lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, 
+                                                        T_max=5, 
+                                                        eta_min=1e-7)
+    #lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
     trainer = Trainer(model, train_loader, val_loader, criterion, optimizer, lr_scheduler, device,
                       metrics_eval_strategy=metrics_eval_strategy,
                       val_dataloader_adapter=None,
                       train_dataloader_adapter=None)
-
     # build a file name for the model weights containing current timestamp and the model class
     training_date = time.strftime("%Y-%m-%d")
     weight_file_name = f"{config.model_type}_weights_{training_date}_{wandb.run.name}.pth"
