@@ -8,9 +8,9 @@ from sklearn.metrics import roc_auc_score, average_precision_score
 from torch.utils.data import DataLoader
 
 import wandb
+from ails_miccai_uwf4dr_challenge.config import WANDB_API_KEY
 # augmentation
 from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice, resize_only
-from ails_miccai_uwf4dr_challenge.config import WANDB_API_KEY
 # data
 from ails_miccai_uwf4dr_challenge.dataset_strategy import CustomDataset, CombinedDatasetStrategy, \
     Task2Strategy, DatasetBuilder, TrainAndValData
@@ -36,10 +36,13 @@ def train(config=None):
         Metric('specificity', specificity_score)
     ]
 
+    wandb.init(project="task1", config=config, group=training_run_grouping)
+    config = wandb.config
+
     dataset_strategy = CombinedDatasetStrategy()
     task_strategy = Task2Strategy()
 
-    builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0.8, n_folds=1, 
+    builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0.8, n_folds=config["num_folds"], 
                              train_set_transformations=rotate_affine_flip_choice, val_set_transformations=resize_only)
     
     train_and_val_data : List[TrainAndValData] = builder.build()
@@ -51,8 +54,6 @@ def train(config=None):
         training_date = time.strftime("%Y-%m-%d")
         training_run_grouping = f"{config.model_type}_{training_date}_fold{i+1}" 
 
-        wandb.init(project="task1", config=config, group=training_run_grouping)
-        config = wandb.config
 
         train_loader = DataLoader(train_val_data.train_data, batch_size=config['batch_size'], shuffle=True)
         val_loader = DataLoader(train_val_data.val_data, batch_size=config['batch_size'], shuffle=False)        
@@ -65,7 +66,7 @@ def train(config=None):
 
     metrics_eval_strategy = DefaultMetricsEvaluationStrategy(metrics).register_metric_calculated_hook(WandbLoggingHook())
 
-    model_run_specific_stuff = create_model_run_specific_stuff(config, device)
+    model_run_specific_stuff = create_training_run_hardware(config, device)
 
     #on_training_run_start_hook = function which creates all model run specific stuff and returns it to the trainer
 
@@ -89,7 +90,7 @@ def train(config=None):
     print("Finished training")
     
 
-def create_model_run_specific_stuff(config, device):
+def create_training_run_hardware(config, device):
     if config.model_type == 'AutoMorphModel':
         model = AutoMorphModel()
     elif config.model_type == 'Task1EfficientNetB4':
@@ -109,7 +110,7 @@ def create_model_run_specific_stuff(config, device):
     optimizer = optim.AdamW(model.parameters(), lr=config["learning_rate"])
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
-    return model,criterion,optimizer,lr_scheduler
+    return model, criterion, optimizer, lr_scheduler
 
 
 if __name__ == "__main__":
@@ -118,11 +119,13 @@ if __name__ == "__main__":
 
     LEARNING_RATE = 1e-3
     EPOCHS = 15
+    NUM_FOLDS = 1
 
     config = {
         "learning_rate": LEARNING_RATE,
         "dataset": "UWF4DR-DEEPDRID",
         "epochs": EPOCHS,
+        "num_folds": NUM_FOLDS,
         "batch_size": 4,
         "model_type": Task1ConvNeXt().__class__.__name__
     }

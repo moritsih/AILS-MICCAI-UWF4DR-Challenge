@@ -572,6 +572,7 @@ class TrainingRunHardware:
         self.lr_scheduler = lr_scheduler
 
 
+
 class TrainingRunStartHook(ABC):
     @abstractmethod
     def on_training_run_start(self, model, criterion, optimizer, lr_scheduler):
@@ -611,7 +612,8 @@ class Trainer:
                  metrics_eval_strategy: MetricsEvaluationStrategy = None,
                  train_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
                  val_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
-                 on_training_run_start_hook: Callable = None
+                 on_training_run_start_hook: TrainingRunStartHook = DefaultTrainingRunStartHook(),
+                 on_training_run_end_hook: TrainingRunEndHook = DefaultTrainingRunEndHook()
             ):
         
         # if only 1 data fold is provided, we can use single_train_loader and single_val_loader
@@ -631,6 +633,7 @@ class Trainer:
 
         self.training_run_hardware = training_run_hardware
         self.on_training_run_start_hook = on_training_run_start_hook
+        self.on_training_run_end_hook = on_training_run_end_hook
 
         self.device = device        
         self.timer = Timer()
