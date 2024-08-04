@@ -33,7 +33,21 @@ class model:
         :return:
         """
         self.model = torch.hub.load('pytorch/vision:v0.10.0', 'shufflenet_v2_x1_0', pretrained=True)
-        self.model.fc = nn.Linear(self.model.fc.in_features, 1)
+
+        net_fl = nn.Sequential(
+            nn.Linear(self.model.fc.in_features, 512),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Dropout(p=0.3),
+            nn.Linear(256, 64),
+            nn.ReLU(),
+            nn.Dropout(p=0.3),
+            nn.Linear(64, 1)
+        )
+
+        self.model.fc = net_fl
         
         # join paths
         checkpoint_path = os.path.join(dir_path, self.checkpoint)

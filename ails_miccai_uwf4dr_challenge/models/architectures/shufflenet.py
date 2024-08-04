@@ -16,10 +16,10 @@ class ShuffleNet(nn.Module):
             nn.Dropout(p=0.5),
             nn.Linear(512, 256),
             nn.ReLU(),
-            nn.Dropout(p=0.5),
+            nn.Dropout(p=0.3),
             nn.Linear(256, 64),
             nn.ReLU(),
-            nn.Dropout(p=0.5),
+            nn.Dropout(p=0.3),
             nn.Linear(64, num_classes)
         )
 
