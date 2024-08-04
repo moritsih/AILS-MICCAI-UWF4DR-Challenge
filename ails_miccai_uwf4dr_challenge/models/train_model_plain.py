@@ -36,6 +36,12 @@ def create_training_run_hardware(config, device):
     Use this method to create the model, criterion, optimizer and lr_scheduler for your training run
     '''
 
+    # don't use mps, it takes ages, why ever that is the case!?!
+    # --> with my new m3, mps works fine!
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    print(f"Using device: {device}")
+
     if config.model_type == 'AutoMorphModel':
         model = AutoMorphModel()
     elif config.model_type == 'Task1EfficientNetB4':
@@ -119,10 +125,12 @@ def train(config=None):
 
 
     # "First train 2 epochs 2 batches to check if everything works - you can comment this line after the code has stabilized..."
-    trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
+    #print("First train 2 epochs 2 batches to check if everything works - "
+    #      "you can comment these lines after the code has stabilized...")
+    #trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
 
-    #print("Now train train train")
-    #trainer.train(num_epochs=config.epochs)
+    print("Now train train train")
+    trainer.train(num_epochs=config.epochs)
 
     print("Finished training")
     
@@ -154,7 +162,7 @@ if __name__ == "__main__":
         resampling_strategy=OversamplingResamplingStrategy() # or UndersamplingResamplingStrategy()
     )
 
-    wandb.login(key=WANDB_API_KEY)
+    # wandb.login(key=WANDB_API_KEY)
 
     train(config)
 

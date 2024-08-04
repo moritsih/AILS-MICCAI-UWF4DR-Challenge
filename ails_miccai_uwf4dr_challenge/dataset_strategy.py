@@ -1,19 +1,21 @@
-import enum
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List
 import pandas as pd
 import numpy as np
 import cv2
-from ails_miccai_uwf4dr_challenge.config import PROCESSED_DATA_DIR, RAW_DATA_DIR, EXTERNAL_DATA_DIR
-from sklearn.model_selection import train_test_split
 import torch
 from torch.utils.data import Dataset, DataLoader
 from abc import ABC, abstractmethod
 from sklearn.model_selection import KFold
+from sklearn.model_selection import train_test_split
+from ails_miccai_uwf4dr_challenge.config import RAW_DATA_DIR, EXTERNAL_DATA_DIR
+
 
 # add seeds
 torch.manual_seed(42)
 np.random.seed(42)
+
 
 class DatasetStrategy(ABC):
     @abstractmethod
@@ -25,6 +27,7 @@ class DatasetStrategy(ABC):
         data['dr'] = data['dr'].astype(float).round().astype("Int64")
         data['dme'] = data['dme'].astype("Int64")
         return data
+
 
 class OriginalDatasetStrategy(DatasetStrategy):
     def get_data(self):
@@ -56,6 +59,7 @@ class OriginalDatasetStrategy(DatasetStrategy):
 
         return self.clean_data(data)
 
+
 class DeepDridDatasetStrategy(DatasetStrategy):
     def get_data(self):
         # Implementation from your original DeepDridDataset class
@@ -75,7 +79,8 @@ class DeepDridDatasetStrategy(DatasetStrategy):
 
         images['img_name'] = images.image_path.apply(lambda x: Path(x).stem)
 
-        data = pd.merge(images, labels, left_on='img_name', right_on='image_path', how='inner').drop(columns=['img_name', 'image_path_y'])
+        data = pd.merge(images, labels, left_on='img_name', right_on='image_path', how='inner').drop(
+            columns=['img_name', 'image_path_y'])
         data = data.rename(columns={'image_path_x': 'image'})
 
         data['quality'] = None
@@ -84,8 +89,8 @@ class DeepDridDatasetStrategy(DatasetStrategy):
 
         return self.clean_data(data)
 
-
-    def _standardize_label_df(self, row):
+    @staticmethod
+    def _standardize_label_df(row):
         try:
             row['dr'] = row['DR_level']
             row['image_path'] = Path(row['image_path']).stem.split('\\')[-1]
@@ -94,8 +99,8 @@ class DeepDridDatasetStrategy(DatasetStrategy):
             row['image_path'] = Path(row['image_id'])
         return row[['image_path', 'dr']]
 
-
-    def _translate_labels(self, label) -> int:
+    @staticmethod
+    def _translate_labels(label) -> int:
         '''
         In our challenge, labels for diabetic retinopathy are:
         0: No DR
@@ -115,10 +120,11 @@ class DeepDridDatasetStrategy(DatasetStrategy):
             return 1
         elif label == 5:
             return 5
-        else:            
+        else:
             raise ValueError(f"Invalid label in DeepDRiD dataset: {label}")
 
-    def _make_quality_labels(self, row):
+    @staticmethod
+    def _make_quality_labels(row):
         '''
         When the 'dr' label in DeepDRiD is 5, the image quality is bad.
         Thus we add a new column "quality" that reflects our knowledge about image quality:
@@ -134,31 +140,31 @@ class DeepDridDatasetStrategy(DatasetStrategy):
         else:
             raise ValueError(f"Invalid label in DeepDRiD dataset: {row['dr']}")
         return row
-    
+
 
 class CombinedDatasetStrategy(DatasetStrategy):
     def get_data(self):
         # Get data from both original strategies
         original_strategy = OriginalDatasetStrategy()
         deepdrid_strategy = DeepDridDatasetStrategy()
-        
+
         original_data = original_strategy.get_data()
         deepdrid_data = deepdrid_strategy.get_data()
-        
+
         # Ensure both datasets have the same columns
         columns_to_use = ['image', 'quality', 'dr', 'dme']
         original_data = original_data[columns_to_use]
         deepdrid_data = deepdrid_data[columns_to_use]
-        
+
         # Combine the datasets
         combined_data = pd.concat([original_data, deepdrid_data], ignore_index=True)
-        
+
         # Reset index and drop any potential duplicates
         combined_data = combined_data.reset_index(drop=True)
 
         # save csv
         #combined_data.to_csv(PROCESSED_DATA_DIR / 'combined_data.csv', index=False)
-        
+
         return combined_data
 
 
@@ -166,45 +172,48 @@ class MiniDatasetStrategy(DatasetStrategy):
     '''
     This strategy may be used for checking if a model works at all. Overfit on few samples to check workability
     '''
+
     def get_data(self):
         # Get data from both original strategies
         original_strategy = OriginalDatasetStrategy()
         deepdrid_strategy = DeepDridDatasetStrategy()
-        
+
         original_data = original_strategy.get_data()
         deepdrid_data = deepdrid_strategy.get_data()
-        
+
         # Ensure both datasets have the same columns
         columns_to_use = ['image', 'quality', 'dr', 'dme']
         original_data = original_data[columns_to_use]
         deepdrid_data = deepdrid_data[columns_to_use]
-        
+
         # Combine the datasets
         combined_data = pd.concat([original_data, deepdrid_data], ignore_index=True)
-        
+
         # Reset index and drop any potential duplicates
         combined_data = combined_data.reset_index(drop=True)
 
         mini_data = combined_data.sample(frac=0.05, replace=False, random_state=42, axis=0)
-        
+
         return mini_data
-        
-    
+
 
 class TaskStrategy(ABC):
     @abstractmethod
     def apply(self, data):
         pass
 
+
 class Task1Strategy(TaskStrategy):
     def apply(self, data):
         data = data.dropna(subset=['quality'])
         return data.drop(columns=['dr', 'dme']).reset_index(drop=True)
 
+
 class Task2Strategy(TaskStrategy):
     def apply(self, data):
         data = data.dropna(subset=['dr'])
         return data.drop(columns=['quality', 'dme']).reset_index(drop=True)
+
 
 class Task3Strategy(TaskStrategy):
     def apply(self, data):
@@ -216,6 +225,22 @@ class Task3Strategy(TaskStrategy):
 
         # Drop unnecessary columns and reset index
         return data.drop(columns=['quality', 'dr']).reset_index(drop=True)
+
+
+class DatasetBuilder:
+    def __init__(self, dataset_strategy: DatasetStrategy,
+                 task_strategy: TaskStrategy, split_ratio: float = 0.8):
+        self.dataset_strategy = dataset_strategy
+        self.task_strategy = task_strategy
+        self.split_ratio = split_ratio
+
+    def build(self):
+        data = self.dataset_strategy.get_data()
+        data = self.task_strategy.apply(data)
+        train_data, val_data = train_test_split(data, test_size=1 - self.split_ratio, random_state=42,
+                                                stratify=data.iloc[:, 1])
+        return train_data, val_data
+
 
 class CustomDataset(Dataset):
     def __init__(self, data, transform=None):
@@ -295,8 +320,8 @@ class DatasetBuilder:
         return loaders
 
 
-def main():
 
+def main():
     # Example: use combined dataset and task1
     dataset_strategy = CombinedDatasetStrategy()
     task_strategy = Task1Strategy()
