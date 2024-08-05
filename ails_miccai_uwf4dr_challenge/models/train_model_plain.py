@@ -87,7 +87,7 @@ def get_augmentations(config):
         A.HorizontalFlip(p=config.p_horizontalflip),
         A.Affine(rotate=config.rotation, rotate_method='ellipse', p=config.p_affine),
         A.Normalize(mean=[0.406, 0.485, 0.456], std=[0.225, 0.229, 0.224], p=1),
-        #A.Resize(770, 1022, p=1), # comment whenever not using DinoV2
+        #A.Resize(770, 1022, p=1), # uncomment whenever using DinoV2
         ToTensorV2(p=1)
     ])
 
@@ -95,7 +95,7 @@ def get_augmentations(config):
             A.Resize(800, 1016, p=1),
             #MultiplyMask(p=1),
             A.Normalize(mean=[0.406, 0.485, 0.456], std=[0.225, 0.229, 0.224], p=1),
-            #A.Resize(770, 1022, p=1), # comment whenever not using DinoV2
+            #A.Resize(770, 1022, p=1), # uncomment whenever using DinoV2
             ToTensorV2(p=1)
         ])
     
@@ -175,8 +175,8 @@ def train(config=None):
 
 
 if __name__ == "__main__":
-    wandb.require(
-        "core")  # The new W&B backend becomes opt-out in version 0.18.0; try it out with `wandb.require("core")`! See https://wandb.me/wandb-core for more information.
+    #wandb.require(
+    #    "core")  # The new W&B backend becomes opt-out in version 0.18.0; try it out with `wandb.require("core")`! See https://wandb.me/wandb-core for more information.
 
     LEARNING_RATE = 1e-3
     EPOCHS = 20
@@ -201,7 +201,7 @@ if __name__ == "__main__":
 
         # probabilities for augmentations
         p_gaussblur=0.5,
-        p_equalize=0.0,
+        p_equalize=0.5,
         p_clahe=0.5,
         p_horizontalflip=0.5,
         rotation=15,
