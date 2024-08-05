@@ -80,7 +80,7 @@ def create_training_run_hardware(config, device):
 def get_augmentations(config):
     transforms_train = A.Compose([
         A.Resize(800, 1016, p=1),
-        MultiplyMask(p=1), # comment out whenever not doing task 1
+        #MultiplyMask(p=1), # comment out whenever not doing task 1
         ResidualGaussBlur(p=config.p_gaussblur),
         A.Equalize(p=config.p_equalize),
         A.CLAHE(clip_limit=5., p=config.p_clahe),
@@ -93,7 +93,7 @@ def get_augmentations(config):
 
     transforms_val = A.Compose([
             A.Resize(800, 1016, p=1),
-            MultiplyMask(p=1),
+            #MultiplyMask(p=1),
             A.Normalize(mean=[0.406, 0.485, 0.456], std=[0.225, 0.229, 0.224], p=1),
             #A.Resize(770, 1022, p=1), # comment whenever not using DinoV2
             ToTensorV2(p=1)
@@ -179,16 +179,16 @@ if __name__ == "__main__":
         "core")  # The new W&B backend becomes opt-out in version 0.18.0; try it out with `wandb.require("core")`! See https://wandb.me/wandb-core for more information.
 
     LEARNING_RATE = 1e-3
-    EPOCHS = 2
-    NUM_FOLDS = 3
-    BATCH_SIZE = 4
+    EPOCHS = 20
+    NUM_FOLDS = 4
+    BATCH_SIZE = 16
 
     config = Config(
 
-        dataset=MiniDatasetStrategy(), #CombinedDatasetStrategy(),
-        task=Task2Strategy(),
+        dataset=CombinedDatasetStrategy(),
+        task=Task1Strategy(),
         resampling_strategy=OversamplingResamplingStrategy(), # or UndersamplingResamplingStrategy() or DoNothingDataloaderPerEpochAdapter()
-        wandb_task="test", # or task 1, task2 or task3
+        wandb_task="task1", # or task 1, task2 or task3
 
         learning_rate=LEARNING_RATE,
         epochs=EPOCHS,
@@ -200,7 +200,7 @@ if __name__ == "__main__":
         lr_scheduler_min_lr=1e-6, # minimum learning rate for cosine annealing
 
         # probabilities for augmentations
-        p_gaussblur=5,
+        p_gaussblur=0.5,
         p_equalize=0.0,
         p_clahe=0.5,
         p_horizontalflip=0.5,
@@ -210,7 +210,7 @@ if __name__ == "__main__":
         loss_weight=0.5, # weight for BCE loss in combined loss function
 
         model_type=ShuffleNet().__class__.__name__,
-        notes="Shufflenet with 4 batch size" # use this field to describe the experiment - it will show up in wandb,
+        notes="4 Folds using shufflenet for task1. Masking is excluded. Oversampling is included and both datasets are used." # use this field to describe the experiment - it will show up in wandb,
     )
 
     wandb.login(key=WANDB_API_KEY)
