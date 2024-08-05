@@ -1,7 +1,7 @@
 import os
 import torch
 from torch import nn
-from torchvision import transforms
+from pathlib import Path
 import cv2
 import numpy as np
 from albumentations.core.transforms_interface import ImageOnlyTransform
@@ -13,9 +13,11 @@ def remove_prefix(state_dict, prefix):
     Remove the prefix from state_dict keys.
     """
     return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
+
+
 class model:
     def __init__(self):
-        self.checkpoints = "#checkpoint_file_path#"  # The checkpoint file path will be replaced in the copied model file - see SubmissionBuilder#CHECK_POINT_FILE_PATH_PLACEHOLDER
+        
         # The model is evaluated using CPU, please do not change to GPU to avoid error reporting.
         self.device = torch.device("cpu")
         self.model = None
@@ -48,17 +50,23 @@ class model:
         )
 
         self.model.fc = net_fl
-        
+
         # join paths
-        checkpoint_path = os.path.join(dir_path, self.checkpoint)
+        checkpoints = list(Path(dir_path).glob('*.pth'))
+        checkpoint_paths = [os.path.join(dir_path, self.checkpoint) for self.checkpoint in checkpoints]
 
-        state_dict = torch.load(checkpoint_path, map_location=self.device)
-        state_dict = remove_prefix(state_dict, 'model.') # we need to remove the prefix as on training EfficientNet was wrapped
+        state_dicts = [torch.load(checkpoint_path, map_location=self.device) for checkpoint_path in checkpoint_paths] 
+        state_dicts = [remove_prefix(state_dict, 'model.') for state_dict in state_dicts] # we need to remove the prefix as on training EfficientNet was wrapped
 
-        self.model.load_state_dict(state_dict)
+        def make_model(state_dict):
+            model = self.model
+            model.load_state_dict(state_dict)
+            model.to(self.device)
+            model.eval()
+            return model
 
-        self.model.to(self.device)
-        self.model.eval()
+        self.models = [make_model(state_dict) for state_dict in state_dicts]
+
 
     def predict(self, input_image):
         """
@@ -76,7 +84,7 @@ class model:
         transform = A.Compose([
             A.Resize(800, 1016, p=1),
             A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], p=1),
-            MultiplyMask(p=1),
+            #MultiplyMask(p=1),
             ToTensorV2(p=1)
         ])
         
@@ -85,10 +93,9 @@ class model:
         image = image.to(self.device)
 
         with torch.no_grad():
-            output = self.model(image)
-            prob = torch.sigmoid(output).squeeze(0)  # Using sigmoid for binary classification
+            output = torch.stack([torch.sigmoid(model(image)).squeeze(0) for model in self.models]).mean()
 
-        class_1_prob = prob.item()  # Convert to float
+        class_1_prob = output.item()  # Convert to float
 
         return float(class_1_prob)
 
@@ -135,3 +142,4 @@ def remove_prefix_in_state_dict(state_dict, prefix):
     Remove the prefix from state_dict keys.
     """
     return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
+

@@ -59,7 +59,7 @@ class MetricResult:
 
 class TrainingContext:
     def __init__(self, model, criterion, optimizer, lr_scheduler, timer: Timer, num_epochs: int,
-                 num_batches=NumBatches.ALL):
+                 num_batches=NumBatches.ALL, num_fold=0):
         assert model is not None
         assert criterion is not None
         assert optimizer is not None
@@ -74,6 +74,7 @@ class TrainingContext:
         self.current_epoch: int = 1
         self.num_epochs: int = num_epochs
         self.num_batches: NumBatches = num_batches
+        self.num_fold = num_fold
         self.epoch_metrics = []
 
     def get_epoch_info(self):
@@ -190,6 +191,7 @@ class DefaultEpochEndHook(EpochEndHook):
 
 class PersistBestModelOnEpochEndHook(EpochEndHook):
     def __init__(self, save_path, print_train_results: bool = True):
+
         self.save_path = save_path
         os.makedirs(os.path.dirname(self.save_path), exist_ok=True)
 
@@ -198,15 +200,17 @@ class PersistBestModelOnEpochEndHook(EpochEndHook):
 
     def on_epoch_end(self, training_context: TrainingContext, train_results: ModelResultsAndLabels,
                      val_results: ModelResultsAndLabels):
+        
         current_val_loss = val_results.model_results.loss
         if current_val_loss < self.best_val_loss:
             self.best_val_loss = current_val_loss
-            # check how many files are in the save_folder
-            num_fold = len(os.listdir(os.path.dirname(self.save_path))) + 1 # +1 because we save the 1st fold when there are 0 files
 
-            torch.save(training_context.model.state_dict(), self.save_path + f"_fold_{num_fold}.pth")
+            # overwrites the best model for the current fold
+            torch.save(training_context.model.state_dict(), self.save_path + f"_fold_{training_context.num_fold + 1}.pth")
+
             print(
-                f"New best weights found at epoch {training_context.current_epoch} with validation loss: {current_val_loss:.4f}. Model saved to {self.save_path}")
+                f"New best weights found at epoch {training_context.current_epoch} with validation loss: {current_val_loss:.4f}. Model saved to {self.save_path}"
+                )
 
         if self.print_train_results:
             _EpochTrainResultPrinter().print_train_val_result(training_context, train_results, val_results)
@@ -711,7 +715,7 @@ class Trainer:
             for hook in self.training_run_start_hooks:
                 hook.on_training_run_start()
 
-            training_context = TrainingContext(model, criterion, optimizer, lr_scheduler, self.timer, num_epochs, num_batches)
+            training_context = TrainingContext(model, criterion, optimizer, lr_scheduler, self.timer, num_epochs, num_batches, num_fold=i)
 
             for epoch in range(num_epochs):
                 training_context.current_epoch = epoch + 1

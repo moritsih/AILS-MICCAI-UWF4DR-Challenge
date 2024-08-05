@@ -7,11 +7,15 @@ import torch.nn as nn
 import torch.optim as optim
 from sklearn.metrics import roc_auc_score, average_precision_score
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
 
 import wandb
 from ails_miccai_uwf4dr_challenge.config import WANDB_API_KEY, Config
 # augmentation
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 from ails_miccai_uwf4dr_challenge.augmentations import rotate_affine_flip_choice, resize_only
+from ails_miccai_uwf4dr_challenge.preprocess_augmentations import ResidualGaussBlur, MultiplyMask
 # data
 from ails_miccai_uwf4dr_challenge.dataset_strategy import CustomDataset, CombinedDatasetStrategy, \
     OriginalDatasetStrategy, DeepDridDatasetStrategy, Task1Strategy, Task2Strategy, Task3Strategy, \
@@ -27,8 +31,7 @@ from ails_miccai_uwf4dr_challenge.models.metrics import sensitivity_score, speci
 # training
 from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Loaders, Metric, MetricCalculatedHook, \
     NumBatches, Trainer, TrainingContext, PersistBestModelOnEpochEndHook, UndersamplingResamplingStrategy, OversamplingResamplingStrategy, \
-    TrainingRunHardware, WandbLoggingHook, InitWandbTrainingStartHook, FinishWandbTrainingEndHook
-
+    DoNothingDataloaderPerEpochAdapter, TrainingRunHardware, WandbLoggingHook, InitWandbTrainingStartHook, FinishWandbTrainingEndHook
 
 
 def create_training_run_hardware(config, device):
@@ -59,12 +62,44 @@ def create_training_run_hardware(config, device):
 
     print("Training model: ", model.__class__.__name__)
 
-    criterion = nn.BCEWithLogitsLoss()
+
+    def bce_smoothl1_combined(pred, target):
+        bce = F.binary_cross_entropy_with_logits(pred, target) * config.loss_weight
+        smooth_l1 = F.smooth_l1_loss(pred, target) * (1 - config.loss_weight)
+        return bce + smooth_l1
+
+
+    criterion = bce_smoothl1_combined # or nn.BCEWithLogitsLoss()
     optimizer = optim.AdamW(model.parameters(), lr=config.learning_rate)
     lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.lr_scheduler_cycle_epochs, eta_min=config.lr_scheduler_min_lr)
     # lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=config.lr_scheduler_factor, patience=3, verbose=True)
 
     return TrainingRunHardware(model, criterion, optimizer, lr_scheduler)
+
+
+def get_augmentations(config):
+    transforms_train = A.Compose([
+        A.Resize(800, 1016, p=1),
+        MultiplyMask(p=1), # comment out whenever not doing task 1
+        ResidualGaussBlur(p=config.p_gaussblur),
+        A.Equalize(p=config.p_equalize),
+        A.CLAHE(clip_limit=5., p=config.p_clahe),
+        A.HorizontalFlip(p=config.p_horizontalflip),
+        A.Affine(rotate=config.rotation, rotate_method='ellipse', p=config.p_affine),
+        A.Normalize(mean=[0.406, 0.485, 0.456], std=[0.225, 0.229, 0.224], p=1),
+        #A.Resize(770, 1022, p=1), # comment whenever not using DinoV2
+        ToTensorV2(p=1)
+    ])
+
+    transforms_val = A.Compose([
+            A.Resize(800, 1016, p=1),
+            MultiplyMask(p=1),
+            A.Normalize(mean=[0.406, 0.485, 0.456], std=[0.225, 0.229, 0.224], p=1),
+            #A.Resize(770, 1022, p=1), # comment whenever not using DinoV2
+            ToTensorV2(p=1)
+        ])
+    
+    return transforms_train, transforms_val
 
 
 
@@ -90,9 +125,11 @@ def train(config=None):
     dataset_strategy = config.dataset
     task_strategy = config.task
 
+    transform_train, transform_val = get_augmentations(config)
+
     builder = DatasetBuilder(dataset_strategy, task_strategy, 
                              split_ratio=0.8, n_folds=config.num_folds, batch_size=config.batch_size,
-                             train_set_transformations=rotate_affine_flip_choice, val_set_transformations=resize_only)
+                             train_set_transformations=transform_train, val_set_transformations=transform_val)
     
     loaders : List[Loaders] = builder.build()
 
@@ -106,7 +143,7 @@ def train(config=None):
                       val_dataloader_adapter=config.resampling_strategy) 
     
     # what should happen when a training run starts?
-    wandb_group_name = fake.word() + "-" + fake.word() + "_grp" # generates a random name for the training run like wandb does
+    wandb_group_name = fake.word() + "-" + fake.word() # generates a random name for the training run like wandb does
     wandb_config = config
     wandb_notes = config.notes
     wandb_init_hook = InitWandbTrainingStartHook(config.wandb_task, wandb_group_name, wandb_config, wandb_notes)
@@ -118,7 +155,7 @@ def train(config=None):
     file_name = f"{config.model_type}_weights_{training_date}"
     model_path = f"models/{wandb_group_name}/{file_name}"
     persist_model_hook = PersistBestModelOnEpochEndHook(model_path, print_train_results=True)
-    #trainer.add_epoch_end_hook(persist_model_hook)
+    trainer.add_epoch_end_hook(persist_model_hook)
 
     # what should happen when a training run ends?
     trainer.add_training_run_end_hook(FinishWandbTrainingEndHook())
@@ -142,27 +179,41 @@ if __name__ == "__main__":
         "core")  # The new W&B backend becomes opt-out in version 0.18.0; try it out with `wandb.require("core")`! See https://wandb.me/wandb-core for more information.
 
     LEARNING_RATE = 1e-3
-    EPOCHS = 15
+    EPOCHS = 2
     NUM_FOLDS = 3
     BATCH_SIZE = 4
 
     config = Config(
-        learning_rate=LEARNING_RATE,
+
         dataset=MiniDatasetStrategy(), #CombinedDatasetStrategy(),
         task=Task2Strategy(),
+        resampling_strategy=OversamplingResamplingStrategy(), # or UndersamplingResamplingStrategy() or DoNothingDataloaderPerEpochAdapter()
+        wandb_task="test", # or task 1, task2 or task3
+
+        learning_rate=LEARNING_RATE,
         epochs=EPOCHS,
         num_folds=NUM_FOLDS,
         batch_size=BATCH_SIZE,
+
         lr_scheduler_factor=0.5, # lr reduction multiplicative factor for ReduceLRonPlateau
         lr_scheduler_cycle_epochs=7, # cosine annealing cycle length
         lr_scheduler_min_lr=1e-6, # minimum learning rate for cosine annealing
+
+        # probabilities for augmentations
+        p_gaussblur=5,
+        p_equalize=0.0,
+        p_clahe=0.5,
+        p_horizontalflip=0.5,
+        rotation=15,
+        p_affine=0.3,
+
+        loss_weight=0.5, # weight for BCE loss in combined loss function
+
         model_type=ShuffleNet().__class__.__name__,
-        wandb_task="test", # or task2 or task3
-        notes="Shufflenet with 4 batch size", # use this field to describe the experiment - it will show up in wandb,
-        resampling_strategy=OversamplingResamplingStrategy() # or UndersamplingResamplingStrategy()
+        notes="Shufflenet with 4 batch size" # use this field to describe the experiment - it will show up in wandb,
     )
 
-    # wandb.login(key=WANDB_API_KEY)
+    wandb.login(key=WANDB_API_KEY)
 
     train(config)
 
