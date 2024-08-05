@@ -692,17 +692,6 @@ class Trainer:
 
 
     def train(self, num_epochs: int, num_batches: NumBatches = NumBatches.ALL):
-    
-        model = self.training_run_hardware.model
-        criterion = self.training_run_hardware.criterion
-        optimizer = self.training_run_hardware.optimizer
-        lr_scheduler = self.training_run_hardware.lr_scheduler
-
-        if self.device.type != next(model.parameters()).device.type:
-            print(
-                f"Moving model to device {self.device}, because it is different "
-                f"from the model's device {next(model.parameters()).device}")
-            model.to(self.device)
 
         # by default, we want to at least print the default losses -
         # you can easily override this by providing some other epoch end hook
@@ -711,6 +700,17 @@ class Trainer:
 
 
         for i, loaders in enumerate(self.loaders):
+
+            model = self.training_run_hardware.model
+            criterion = self.training_run_hardware.criterion
+            optimizer = self.training_run_hardware.optimizer
+            lr_scheduler = self.training_run_hardware.lr_scheduler
+
+            if self.device.type != next(model.parameters()).device.type:
+                print(
+                    f"Moving model to device {self.device}, because it is different "
+                    f"from the model's device {next(model.parameters()).device}")
+                model.to(self.device)
 
             for hook in self.training_run_start_hooks:
                 hook.on_training_run_start()

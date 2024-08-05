@@ -185,7 +185,7 @@ if __name__ == "__main__":
 
     config = Config(
 
-        dataset=ombinedDatasetStrategy(),
+        dataset=CombinedDatasetStrategy(),
         task=Task1Strategy(),
         resampling_strategy=OversamplingResamplingStrategy(), # or UndersamplingResamplingStrategy() or DoNothingDataloaderPerEpochAdapter()
         wandb_task="task1", # or task 1, task2 or task3
