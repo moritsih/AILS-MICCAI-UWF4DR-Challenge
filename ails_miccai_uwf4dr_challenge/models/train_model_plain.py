@@ -133,44 +133,48 @@ def train(config=None):
     
     loaders : List[Loaders] = builder.build()
 
-    metrics_eval_strategy = DefaultMetricsEvaluationStrategy(metrics).register_metric_calculated_hook(WandbLoggingHook())
-
-    model_run_hardware = create_training_run_hardware(config, device)
-
-    trainer = Trainer(model_run_hardware, loaders, device,
-                      metrics_eval_strategy=metrics_eval_strategy,
-                      train_dataloader_adapter=config.resampling_strategy,
-                      val_dataloader_adapter=config.resampling_strategy) 
-    
     # what should happen when a training run starts?
     wandb_group_name = fake.word() + "-" + fake.word() # generates a random name for the training run like wandb does
     wandb_config = config
     wandb_notes = config.notes
     wandb_init_hook = InitWandbTrainingStartHook(config.wandb_task, wandb_group_name, wandb_config, wandb_notes)
-    trainer.add_training_run_start_hook(wandb_init_hook)
 
-    # what should happend when an epoch ends?
-    # build a file name for the model weights containing current timestamp and the model class
-    training_date = time.strftime("%Y-%m-%d")
-    file_name = f"{config.model_type}_weights_{training_date}"
-    model_path = f"models/{wandb_group_name}/{file_name}"
-    persist_model_hook = PersistBestModelOnEpochEndHook(model_path, print_train_results=True)
-    trainer.add_epoch_end_hook(persist_model_hook)
+    for i, loader in enumerate(loaders):
 
-    # what should happen when a training run ends?
-    trainer.add_training_run_end_hook(FinishWandbTrainingEndHook())
+        metrics_eval_strategy = DefaultMetricsEvaluationStrategy(metrics).register_metric_calculated_hook(WandbLoggingHook())
+
+        model_run_hardware = create_training_run_hardware(config, device)
+
+        trainer = Trainer(model_run_hardware, loader, device,
+                          metrics_eval_strategy=metrics_eval_strategy,
+                          train_dataloader_adapter=config.resampling_strategy,
+                          val_dataloader_adapter=config.resampling_strategy,
+                          num_fold=i) 
+        
+
+        trainer.add_training_run_start_hook(wandb_init_hook)
+
+        # what should happend when an epoch ends?
+        # build a file name for the model weights containing current timestamp and the model class
+        training_date = time.strftime("%Y-%m-%d")
+        file_name = f"{config.model_type}_weights_{training_date}"
+        model_path = f"models/{wandb_group_name}/{file_name}"
+        persist_model_hook = PersistBestModelOnEpochEndHook(model_path, print_train_results=True)
+        trainer.add_epoch_end_hook(persist_model_hook)
+
+        # what should happen when a training run ends?
+        trainer.add_training_run_end_hook(FinishWandbTrainingEndHook())
 
 
-    # "First train 2 epochs 2 batches to check if everything works - you can comment this line after the code has stabilized..."
-    #print("First train 2 epochs 2 batches to check if everything works - "
-    #      "you can comment these lines after the code has stabilized...")
-    #trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
+        # "First train 2 epochs 2 batches to check if everything works - you can comment this line after the code has stabilized..."
+        #print("First train 2 epochs 2 batches to check if everything works - "
+        #      "you can comment these lines after the code has stabilized...")
+        #trainer.train(num_epochs=2, num_batches=NumBatches.TWO_FOR_INITIAL_TESTING)
 
-    print("Now train train train")
-    trainer.train(num_epochs=config.epochs)
+        print("Now train train train")
+        trainer.train(num_epochs=config.epochs)
 
     print("Finished training")
-    
 
 
 
@@ -181,14 +185,14 @@ if __name__ == "__main__":
     LEARNING_RATE = 1e-3
     EPOCHS = 20
     NUM_FOLDS = 4
-    BATCH_SIZE = 16
+    BATCH_SIZE = 4
 
     config = Config(
 
-        dataset=CombinedDatasetStrategy(),
+        dataset=MiniDatasetStrategy(),#CombinedDatasetStrategy(),
         task=Task1Strategy(),
         resampling_strategy=OversamplingResamplingStrategy(), # or UndersamplingResamplingStrategy() or DoNothingDataloaderPerEpochAdapter()
-        wandb_task="task1", # or task 1, task2 or task3
+        wandb_task="test", # or task 1, task2 or task3
 
         learning_rate=LEARNING_RATE,
         epochs=EPOCHS,
@@ -201,7 +205,7 @@ if __name__ == "__main__":
 
         # probabilities for augmentations
         p_gaussblur=0.5,
-        p_equalize=0.5,
+        p_equalize=0.3,
         p_clahe=0.5,
         p_horizontalflip=0.5,
         rotation=15,

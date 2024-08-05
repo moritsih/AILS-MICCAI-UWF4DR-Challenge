@@ -10,8 +10,6 @@ import os
 from enum import Enum
 import time
 from contextlib import contextmanager
-from torch.utils.data import DataLoader
-from torch.optim import lr_scheduler
 import wandb
 from ails_miccai_uwf4dr_challenge.dataset_strategy import Loaders
 
@@ -630,20 +628,23 @@ class FinishWandbTrainingEndHook(TrainingRunEndHook):
 class Trainer:
     def __init__(self, 
                 training_run_hardware: TrainingRunHardware = None, 
-                loaders : List[Loaders] = None,
+                loader : Loaders = None,
                 device=None,
                 training_strategy: EpochTrainingStrategy = None,
                 validation_strategy: EpochValidationStrategy = None,
                 metrics_eval_strategy: MetricsEvaluationStrategy = None,
                 train_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
-                val_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter()
+                val_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
+                num_fold: int = 0
                 ):
         
-        if loaders is not None:
-            if len(loaders) == 0:
-                raise ValueError("At least one Loader must be provided")
+        if loader is not None:
+            if len(loader.train_loader) == 0 or len(loader.val_loader) == 0:
+                raise ValueError("Train and validation loaders must be provided")
             else:
-                self.loaders = loaders
+                self.loader = loader
+        else:
+            raise ValueError("Train and validation loaders must be provided")
 
         if training_run_hardware is None:
             raise ValueError("Must provide training run hardware with model, criterion, optimizer, and lr scheduler")
@@ -651,6 +652,7 @@ class Trainer:
         self.training_run_hardware = training_run_hardware
 
         self.device = device        
+        self.num_fold = num_fold
         self.timer = Timer()
 
         self.training_strategy = (training_strategy or
@@ -698,49 +700,46 @@ class Trainer:
         if not self.epoch_end_hooks:
             self.epoch_end_hooks.append(DefaultEpochEndHook())
 
+        model = self.training_run_hardware.model
+        criterion = self.training_run_hardware.criterion
+        optimizer = self.training_run_hardware.optimizer
+        lr_scheduler = self.training_run_hardware.lr_scheduler
 
-        for i, loaders in enumerate(self.loaders):
+        if self.device.type != next(model.parameters()).device.type:
+            print(
+                f"Moving model to device {self.device}, because it is different "
+                f"from the model's device {next(model.parameters()).device}")
+            model.to(self.device)
 
-            model = self.training_run_hardware.model
-            criterion = self.training_run_hardware.criterion
-            optimizer = self.training_run_hardware.optimizer
-            lr_scheduler = self.training_run_hardware.lr_scheduler
+        training_context = TrainingContext(model, criterion, optimizer, lr_scheduler, self.timer, num_epochs, num_batches, num_fold=self.num_fold)
 
-            if self.device.type != next(model.parameters()).device.type:
-                print(
-                    f"Moving model to device {self.device}, because it is different "
-                    f"from the model's device {next(model.parameters()).device}")
-                model.to(self.device)
+        for hook in self.training_run_start_hooks:
+            hook.on_training_run_start()
 
-            for hook in self.training_run_start_hooks:
-                hook.on_training_run_start()
-
-            training_context = TrainingContext(model, criterion, optimizer, lr_scheduler, self.timer, num_epochs, num_batches, num_fold=i)
-
-            for epoch in range(num_epochs):
-                training_context.current_epoch = epoch + 1
-                model_train_results: ModelResultsAndLabels = self.training_strategy.train(training_context,
-                                                                                        loaders.train_loader)
-                model_val_results: ModelResultsAndLabels = self.validation_strategy.validate(training_context,
-                                                                                        loaders.val_loader)
-                
-                if training_context.lr_scheduler is not None:
-                    if isinstance(training_context.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                        training_context.lr_scheduler.step(model_val_results.model_results.loss)
-                    else:
-                        training_context.lr_scheduler.step()
-
-                for hook in self.epoch_train_end_hooks:
-                    hook.on_epoch_train_end(training_context, model_train_results)
-
-                for hook in self.epoch_validation_end_hooks:
-                    hook.on_epoch_validation_end(training_context, model_val_results)
-
-                self.metrics_eval_strategy.evaluate(training_context, model_train_results, model_val_results)
-
-                for hook in self.epoch_end_hooks:
-                    hook.on_epoch_end(training_context, model_train_results, model_val_results)
+        for epoch in range(num_epochs):
+            training_context.current_epoch = epoch + 1
+            model_train_results: ModelResultsAndLabels = self.training_strategy.train(training_context,
+                                                                                    self.loader.train_loader)
+            model_val_results: ModelResultsAndLabels = self.validation_strategy.validate(training_context,
+                                                                                    self.loader.val_loader)
             
-            for hook in self.training_run_end_hooks:
-                hook.on_training_run_end()
+            if training_context.lr_scheduler is not None:
+                if isinstance(training_context.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    training_context.lr_scheduler.step(model_val_results.model_results.loss)
+                else:
+                    training_context.lr_scheduler.step()
+
+            for hook in self.epoch_train_end_hooks:
+                hook.on_epoch_train_end(training_context, model_train_results)
+
+            for hook in self.epoch_validation_end_hooks:
+                hook.on_epoch_validation_end(training_context, model_val_results)
+
+            self.metrics_eval_strategy.evaluate(training_context, model_train_results, model_val_results)
+
+            for hook in self.epoch_end_hooks:
+                hook.on_epoch_end(training_context, model_train_results, model_val_results)
+        
+        for hook in self.training_run_end_hooks:
+            hook.on_training_run_end()
 
