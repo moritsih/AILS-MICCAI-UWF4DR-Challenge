@@ -51,10 +51,15 @@ class model:
 
         self.model.fc = net_fl
 
+        dir_path = os.path.abspath(dir_path)
         # join paths
-        checkpoints = list(Path(dir_path).glob('*.pth'))
-        checkpoint_paths = [os.path.join(dir_path, self.checkpoint) for self.checkpoint in checkpoints]
+        print("Loading checkpoints from here: ", dir_path, "\n")
 
+        checkpoints = list(Path(dir_path).glob('*.pth'))
+        assert len(checkpoints) > 0, 'No checkpoints found.'
+
+        checkpoint_paths = [os.path.join(dir_path, self.checkpoint) for self.checkpoint in checkpoints]
+        
         state_dicts = [torch.load(checkpoint_path, map_location=self.device) for checkpoint_path in checkpoint_paths] 
         state_dicts = [remove_prefix(state_dict, 'model.') for state_dict in state_dicts] # we need to remove the prefix as on training EfficientNet was wrapped
 
@@ -93,8 +98,9 @@ class model:
         image = image.to(self.device)
 
         with torch.no_grad():
-            output = torch.stack([torch.sigmoid(model(image)).squeeze(0) for model in self.models]).mean()
 
+            output = torch.sigmoid(torch.stack([model(image).squeeze(0) for model in self.models])).mean()
+            
         class_1_prob = output.item()  # Convert to float
 
         return float(class_1_prob)
@@ -142,4 +148,3 @@ def remove_prefix_in_state_dict(state_dict, prefix):
     Remove the prefix from state_dict keys.
     """
     return {key[len(prefix):]: value for key, value in state_dict.items() if key.startswith(prefix)}
-
