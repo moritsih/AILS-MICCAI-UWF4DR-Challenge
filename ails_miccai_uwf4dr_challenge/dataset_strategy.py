@@ -17,6 +17,12 @@ torch.manual_seed(42)
 np.random.seed(42)
 
 
+def sample_weights(labels):
+    # Calculate class weights
+    class_weights = 1 / labels.value_counts(normalize=True).sort_index().values
+    sample_weights = class_weights[labels.values]
+    return sample_weights
+
 class DatasetStrategy(ABC):
     @abstractmethod
     def get_data(self):
@@ -27,6 +33,8 @@ class DatasetStrategy(ABC):
         data['dr'] = data['dr'].astype(float).round().astype("Int64")
         data['dme'] = data['dme'].astype("Int64")
         return data
+    
+
 
 
 class OriginalDatasetStrategy(DatasetStrategy):
@@ -237,6 +245,7 @@ class DatasetBuilder:
     def build(self):
         data = self.dataset_strategy.get_data()
         data = self.task_strategy.apply(data)
+        data["weight"] = sample_weights(data.iloc[:, 1])
         train_data, val_data = train_test_split(data, test_size=1 - self.split_ratio, random_state=42,
                                                 stratify=data.iloc[:, 1])
         return train_data, val_data
@@ -253,15 +262,20 @@ class CustomDataset(Dataset):
     def __getitem__(self, idx):
         img_path = self.data.iloc[idx, 0]
         label = self.data.iloc[idx, 1]
+        weight = self.data.iloc[idx, 2]
         label = torch.tensor(label, dtype=torch.float32).unsqueeze(0)
         img = cv2.imread(str(img_path))
         try:
             if self.transform:
-                img = self.transform(img)
+                #img = self.transform(img)
         except KeyError:
             if self.transform:
                 img = self.transform(image=img)['image'] # when using Albumentations
-        return img, label    
+            augmented = self.transform(image=img)
+            img = augmented['image']
+
+        return img, label, weight
+
 
 
 class Loaders:

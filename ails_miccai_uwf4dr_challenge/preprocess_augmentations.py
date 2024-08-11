@@ -2,6 +2,7 @@ import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
 from ails_miccai_uwf4dr_challenge.config import PROJ_ROOT
 from pathlib import Path
+from torchvision.transforms import v2
 import numpy as np
 from albumentations.core.transforms_interface import ImageOnlyTransform
 import cv2
@@ -10,17 +11,8 @@ from skimage import restoration
 import torch
 
 
-class GreenChannelEnhancement(ImageOnlyTransform):
-
-    def __init__(self, p=1) -> None:
-        super(GreenChannelEnhancement, self).__init__()
-        self.p = p
-        
-    def apply(self, img, **params):
-
-        if np.random.uniform(0, 1) > self.p:
-            return img
-        
+class GreenChannelEnhancement:
+    def __call__(self, img):
         # Convert to numpy array if it's a tensor
         if isinstance(img, torch.Tensor):
             img = img.numpy().transpose((1, 2, 0))
@@ -48,7 +40,11 @@ class GreenChannelEnhancement(ImageOnlyTransform):
         # Merge the enhanced green channel back with the original red and blue channels
         enhanced_img = cv2.merge((r, g_enhanced, b))
 
+        # Convert back to tensor
+        enhanced_img = torch.from_numpy(enhanced_img.transpose((2, 0, 1)))
         return enhanced_img
+
+
         
 
 
@@ -70,7 +66,6 @@ class ResidualGaussBlur(ImageOnlyTransform):
         img = img + A.GaussNoise(p=1)(image=img)["image"]
         
         return img
-
 
 ellipse = cv2.ellipse(np.zeros((800, 1016), dtype=np.uint8), (525, 400), (480, 380), 0, 0, 360, 1, -1) # ellipse mask made from hand-drawn mask
 MASK = np.array([ellipse, ellipse, ellipse], dtype=np.uint8).transpose(1, 2, 0)
@@ -107,7 +102,7 @@ class MultiplyMask(ImageOnlyTransform):
         return img
 
 
-transforms_train = A.Compose([
+"""transforms_train = A.Compose([
     A.Resize(800, 1016, p=1),
     MultiplyMask(p=1),
     A.OneOf([
@@ -127,7 +122,7 @@ transforms_val = A.Compose([
         MultiplyMask(p=1),
         A.Normalize(mean=[0.406, 0.485, 0.456], std=[0.225, 0.229, 0.224], p=1),
         ToTensorV2(p=1)
-    ])
+    ])"""
 
 def main():
     from ails_miccai_uwf4dr_challenge.dataset_strategy import CustomDataset, DatasetStrategy, CombinedDatasetStrategy, \

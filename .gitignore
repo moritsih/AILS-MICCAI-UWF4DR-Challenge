@@ -4,14 +4,23 @@
 /tools/to_be_encrypted/
 
 # models downloaded
-models/AutoMorph/*.pth
+models/task1_AutoMorph/*.pth
 models/example_submission/*.pth
-models/EfficientNet/*.pth
+models/task_1_EfficientNet0/*.pth
+models/task_1_EfficientNet4/*.pth
+models/task_1_EfficientNetExtended/*.pth
+models/task_1_EfficientNetV2/*.pth
+models/task_2_AutoMorph/*.pth
+models/task_2_EfficientNet0/*.pth
+models/task_3_EfficientNet0/*.pth
+
 *.pth
+
 # logs
 wandb/
 notebooks/wandb/
 lightning_logs/
+
 
 # Mac OS-specific storage files
 .DS_Store

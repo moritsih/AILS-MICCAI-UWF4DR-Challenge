@@ -344,6 +344,8 @@ class CustomDataset(Dataset):
 
         if self.transform:
             img = self.transform(image=img)['image']
+        #if self.transform:
+            #img = self.transform(img)
 
         return img, label
     
