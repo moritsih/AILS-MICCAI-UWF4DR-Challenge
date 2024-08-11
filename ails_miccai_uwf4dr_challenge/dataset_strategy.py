@@ -1,17 +1,21 @@
-import enum
+from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import List
 import pandas as pd
 import numpy as np
 import cv2
-from ails_miccai_uwf4dr_challenge.config import PROCESSED_DATA_DIR, RAW_DATA_DIR, EXTERNAL_DATA_DIR
-from sklearn.model_selection import train_test_split
 import torch
-from torch.utils.data import Dataset, WeightedRandomSampler
+from torch.utils.data import Dataset, DataLoader
 from abc import ABC, abstractmethod
+from sklearn.model_selection import KFold
+from sklearn.model_selection import train_test_split
+from ails_miccai_uwf4dr_challenge.config import RAW_DATA_DIR, EXTERNAL_DATA_DIR
+
 
 # add seeds
 torch.manual_seed(42)
 np.random.seed(42)
+
 
 def sample_weights(labels):
     # Calculate class weights
@@ -30,6 +34,7 @@ class DatasetStrategy(ABC):
         data['dme'] = data['dme'].astype("Int64")
         return data
     
+
 
 
 class OriginalDatasetStrategy(DatasetStrategy):
@@ -62,6 +67,7 @@ class OriginalDatasetStrategy(DatasetStrategy):
 
         return self.clean_data(data)
 
+
 class DeepDridDatasetStrategy(DatasetStrategy):
     def get_data(self):
         # Implementation from your original DeepDridDataset class
@@ -81,7 +87,8 @@ class DeepDridDatasetStrategy(DatasetStrategy):
 
         images['img_name'] = images.image_path.apply(lambda x: Path(x).stem)
 
-        data = pd.merge(images, labels, left_on='img_name', right_on='image_path', how='inner').drop(columns=['img_name', 'image_path_y'])
+        data = pd.merge(images, labels, left_on='img_name', right_on='image_path', how='inner').drop(
+            columns=['img_name', 'image_path_y'])
         data = data.rename(columns={'image_path_x': 'image'})
 
         data['quality'] = None
@@ -90,8 +97,8 @@ class DeepDridDatasetStrategy(DatasetStrategy):
 
         return self.clean_data(data)
 
-
-    def _standardize_label_df(self, row):
+    @staticmethod
+    def _standardize_label_df(row):
         try:
             row['dr'] = row['DR_level']
             row['image_path'] = Path(row['image_path']).stem.split('\\')[-1]
@@ -100,8 +107,8 @@ class DeepDridDatasetStrategy(DatasetStrategy):
             row['image_path'] = Path(row['image_id'])
         return row[['image_path', 'dr']]
 
-
-    def _translate_labels(self, label) -> int:
+    @staticmethod
+    def _translate_labels(label) -> int:
         '''
         In our challenge, labels for diabetic retinopathy are:
         0: No DR
@@ -121,10 +128,11 @@ class DeepDridDatasetStrategy(DatasetStrategy):
             return 1
         elif label == 5:
             return 5
-        else:            
+        else:
             raise ValueError(f"Invalid label in DeepDRiD dataset: {label}")
 
-    def _make_quality_labels(self, row):
+    @staticmethod
+    def _make_quality_labels(row):
         '''
         When the 'dr' label in DeepDRiD is 5, the image quality is bad.
         Thus we add a new column "quality" that reflects our knowledge about image quality:
@@ -140,31 +148,31 @@ class DeepDridDatasetStrategy(DatasetStrategy):
         else:
             raise ValueError(f"Invalid label in DeepDRiD dataset: {row['dr']}")
         return row
-    
+
 
 class CombinedDatasetStrategy(DatasetStrategy):
     def get_data(self):
         # Get data from both original strategies
         original_strategy = OriginalDatasetStrategy()
         deepdrid_strategy = DeepDridDatasetStrategy()
-        
+
         original_data = original_strategy.get_data()
         deepdrid_data = deepdrid_strategy.get_data()
-        
+
         # Ensure both datasets have the same columns
         columns_to_use = ['image', 'quality', 'dr', 'dme']
         original_data = original_data[columns_to_use]
         deepdrid_data = deepdrid_data[columns_to_use]
-        
+
         # Combine the datasets
         combined_data = pd.concat([original_data, deepdrid_data], ignore_index=True)
-        
+
         # Reset index and drop any potential duplicates
         combined_data = combined_data.reset_index(drop=True)
 
         # save csv
         #combined_data.to_csv(PROCESSED_DATA_DIR / 'combined_data.csv', index=False)
-        
+
         return combined_data
 
 
@@ -172,45 +180,48 @@ class MiniDatasetStrategy(DatasetStrategy):
     '''
     This strategy may be used for checking if a model works at all. Overfit on few samples to check workability
     '''
+
     def get_data(self):
         # Get data from both original strategies
         original_strategy = OriginalDatasetStrategy()
         deepdrid_strategy = DeepDridDatasetStrategy()
-        
+
         original_data = original_strategy.get_data()
         deepdrid_data = deepdrid_strategy.get_data()
-        
+
         # Ensure both datasets have the same columns
         columns_to_use = ['image', 'quality', 'dr', 'dme']
         original_data = original_data[columns_to_use]
         deepdrid_data = deepdrid_data[columns_to_use]
-        
+
         # Combine the datasets
         combined_data = pd.concat([original_data, deepdrid_data], ignore_index=True)
-        
+
         # Reset index and drop any potential duplicates
         combined_data = combined_data.reset_index(drop=True)
 
         mini_data = combined_data.sample(frac=0.05, replace=False, random_state=42, axis=0)
-        
+
         return mini_data
-        
-    
+
 
 class TaskStrategy(ABC):
     @abstractmethod
     def apply(self, data):
         pass
 
+
 class Task1Strategy(TaskStrategy):
     def apply(self, data):
         data = data.dropna(subset=['quality'])
         return data.drop(columns=['dr', 'dme']).reset_index(drop=True)
 
+
 class Task2Strategy(TaskStrategy):
     def apply(self, data):
         data = data.dropna(subset=['dr'])
         return data.drop(columns=['quality', 'dme']).reset_index(drop=True)
+
 
 class Task3Strategy(TaskStrategy):
     def apply(self, data):
@@ -222,21 +233,21 @@ class Task3Strategy(TaskStrategy):
 
         # Drop unnecessary columns and reset index
         return data.drop(columns=['quality', 'dr']).reset_index(drop=True)
-    
 
 
 class DatasetBuilder:
-    def __init__(self, dataset_strategy: DatasetStrategy, 
+    def __init__(self, dataset_strategy: DatasetStrategy,
                  task_strategy: TaskStrategy, split_ratio: float = 0.8):
         self.dataset_strategy = dataset_strategy
         self.task_strategy = task_strategy
         self.split_ratio = split_ratio
-        
+
     def build(self):
         data = self.dataset_strategy.get_data()
         data = self.task_strategy.apply(data)
         data["weight"] = sample_weights(data.iloc[:, 1])
-        train_data, val_data = train_test_split(data, test_size=1-self.split_ratio, random_state=42, stratify=data.iloc[:, 1])
+        train_data, val_data = train_test_split(data, test_size=1 - self.split_ratio, random_state=42,
+                                                stratify=data.iloc[:, 1])
         return train_data, val_data
 
 
@@ -254,30 +265,87 @@ class CustomDataset(Dataset):
         weight = self.data.iloc[idx, 2]
         label = torch.tensor(label, dtype=torch.float32).unsqueeze(0)
         img = cv2.imread(str(img_path))
-        if self.transform:
-            #img = self.transform(img)
+        try:
+            if self.transform:
+                #img = self.transform(img)
+        except KeyError:
+            if self.transform:
+                img = self.transform(image=img)['image'] # when using Albumentations
             augmented = self.transform(image=img)
             img = augmented['image']
 
         return img, label, weight
 
 
-def main():
 
+class Loaders:
+    def __init__(self, train_loader : DataLoader, val_loader : DataLoader):
+        assert len(train_loader.dataset) > 0
+        assert len(val_loader.dataset) > 0
+        self.train_loader : DataLoader = train_loader
+        self.val_loader : DataLoader = val_loader
+
+
+class DatasetBuilder:
+    def __init__(self, dataset_strategy: DatasetStrategy, 
+                 task_strategy: TaskStrategy, 
+                 batch_size: int, 
+                 train_dataloader_shuffle: bool = True,
+                 val_dataloader_shuffle: bool = False,
+                 split_ratio: float = 0.8, n_folds: int = 1, 
+                 train_set_transformations=None, val_set_transformations=None):
+        
+        self.dataset_strategy = dataset_strategy
+        self.task_strategy = task_strategy
+        self.split_ratio = split_ratio
+        self.n_folds = n_folds
+        self.batch_size = batch_size
+        self.train_dataloader_shuffle = train_dataloader_shuffle
+        self.val_dataloader_shuffle = val_dataloader_shuffle
+        self.train_set_transformations = train_set_transformations
+        self.val_set_transformations = val_set_transformations
+
+    def build(self) -> List[Loaders]:
+
+        loaders = []    
+
+        data = self.dataset_strategy.get_data()
+        data = self.task_strategy.apply(data)
+
+        if self.n_folds == 1:
+            train_data, val_data = train_test_split(data, test_size=1-self.split_ratio, random_state=42, stratify=data.iloc[:, 1])
+            train_loader = DataLoader(CustomDataset(train_data, self.train_set_transformations), batch_size=self.batch_size, shuffle=self.train_dataloader_shuffle)
+            val_loader = DataLoader(CustomDataset(train_data, self.train_set_transformations), batch_size=self.batch_size, shuffle=self.val_dataloader_shuffle)
+
+            loaders.append(Loaders(train_loader, val_loader))
+
+        elif self.n_folds > 1:
+            kf = KFold(n_splits=self.n_folds, shuffle=True, random_state=42)
+
+            for train_index, test_index in kf.split(data):
+                train_data, val_data = data.iloc[train_index], data.iloc[test_index]
+                train_loader = DataLoader(CustomDataset(train_data, self.train_set_transformations), batch_size=self.batch_size, shuffle=self.train_dataloader_shuffle)
+                val_loader = DataLoader(CustomDataset(val_data, self.val_set_transformations), batch_size=self.batch_size, shuffle=self.val_dataloader_shuffle)
+                loaders.append(Loaders(train_loader, val_loader))
+        else:
+            raise ValueError("n_folds must be a positive integer")
+
+        assert len(loaders) == self.n_folds
+        return loaders
+
+
+
+def main():
     # Example: use combined dataset and task1
     dataset_strategy = CombinedDatasetStrategy()
     task_strategy = Task1Strategy()
 
     # Build dataset
-    builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0.8)
-    train_data, val_data = builder.build()
+    builder = DatasetBuilder(dataset_strategy, task_strategy, batch_size=16, split_ratio=0.8, n_folds=1)
+    loaderssets = builder.build()
 
-    # Create PyTorch datasets
-    train_dataset = CustomDataset(train_data)
-    val_dataset = CustomDataset(val_data)
-
-    print("Train dataset size:", len(train_dataset))
-    print("Validation dataset size:", len(val_dataset))
+    for loadersset in loaderssets:
+        print("Train dataset size:", len(loadersset.train_loader.dataset))
 
 
 if __name__ == "__main__":
