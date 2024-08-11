@@ -28,7 +28,7 @@ from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain 
 from ails_miccai_uwf4dr_challenge.models.metrics import sensitivity_score, specificity_score
 from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Metric, MetricCalculatedHook, \
     NumBatches, Trainer, TrainingContext, PersistBestModelOnEpochEndHook, UndersamplingResamplingStrategy, \
-    FinishWandbTrainingEndHook, WandbLoggingHook, Loaders, SamplingStrategy, SigmoidFocalLoss
+    FinishWandbTrainingEndHook, WandbLoggingHook, Loaders, SamplingStrategy, SigmoidFocalLoss, TrainingRunHardware
 
 
 def train(config=None):
@@ -44,8 +44,8 @@ def train(config=None):
     train_dataset = CustomDataset(train_data, transform=transforms_train)
     val_dataset = CustomDataset(val_data, transform=transforms_val)
 
-    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False)
 
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
@@ -128,6 +128,7 @@ def train(config=None):
         Metric('sensitivity', sensitivity_score),
         Metric('specificity', specificity_score)
     ]
+    
 
     dataset_strategy = config.dataset
     task_strategy = config.task
@@ -148,8 +149,14 @@ def train(config=None):
     elif config.criterion == "SigmoidFocalLoss":
         criterion = SigmoidFocalLoss(gamma=config.gamma, alpha=config.alpha)
 
-    optimizer = optim.AdamW(model.parameters(), lr=config.lr)
-    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
+    optimizer = optim.AdamW(config.model.parameters(), lr=config.lr)
+    if config.lr_scheduler == "ReduceLROnPlateau":
+        lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=config.lr_schedule_factor, patience=config.lr_schedule_patience)
+    elif config.lr_scheduler == "CosineAnnealing":
+        lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.lr_scheduler_cycle_epochs, eta_min=config.lr_scheduler_min_lr)
+
+
+    model_run_hardware = TrainingRunHardware(config.model, criterion, optimizer, lr_scheduler)
 
     trainer = Trainer(model_run_hardware, loaders, device,
                       metrics_eval_strategy=metrics_eval_strategy,
@@ -159,7 +166,7 @@ def train(config=None):
     # build a file name for the model weights containing current timestamp and the model class
     training_date = time.strftime("%Y-%m-%d")
     file_name = f"{config.model_type}_weights_{training_date}"
-    model_path = f"models/{wandb_group_name}/{file_name}"
+    model_path = f"models/{config.model_type}/{file_name}"
     persist_model_hook = PersistBestModelOnEpochEndHook(model_path, print_train_results=True)
     trainer.add_epoch_end_hook(persist_model_hook)
 
@@ -186,8 +193,9 @@ if __name__ == "__main__":
 
 
 
-    conig = Config(
+    config = Config(
     project="task3",
+    model_type="task_3_EfficientNet0",
     dataset=OriginalDatasetStrategy(),
     task=Task3Strategy(),
     criterion="BCEWithLogitsLoss",
@@ -196,6 +204,9 @@ if __name__ == "__main__":
     batch_size=8,
     epochs=15,
     lr=0.0001,
+    lr_scheduler = "CosineAnnealing", # or "ReduceLROnPlateau"
+    lr_scheduler_cycle_epochs=5,
+    lr_scheduler_min_lr=1e-6,
     lr_schedule_factor=0.1,
     lr_schedule_patience=5,
     p_gaussblur=5,
@@ -207,7 +218,7 @@ if __name__ == "__main__":
     loss_weight=0.5,
     num_folds=5,
     resampling_strategy=None,
-    model="EfficientNetB0",
+    model=Task3EfficientNetB0(),
     tmax=9,
     min_lr=1e-6
 )
