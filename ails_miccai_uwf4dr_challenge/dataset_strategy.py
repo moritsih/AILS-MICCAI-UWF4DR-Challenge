@@ -267,12 +267,12 @@ class CustomDataset(Dataset):
         img = cv2.imread(str(img_path))
         try:
             if self.transform:
-                #img = self.transform(img)
+                img = self.transform(img)
         except KeyError:
             if self.transform:
                 img = self.transform(image=img)['image'] # when using Albumentations
-            augmented = self.transform(image=img)
-            img = augmented['image']
+                augmented = self.transform(image=img)
+                img = augmented['image']
 
         return img, label, weight
 

@@ -18,29 +18,31 @@ from ails_miccai_uwf4dr_challenge.augmentations import transforms_train, transfo
 from ails_miccai_uwf4dr_challenge.preprocess_augmentations import ResidualGaussBlur, MultiplyMask
 
 # data
-from ails_miccai_uwf4dr_challenge.dataset_strategy import CustomDataset, CombinedDatasetStrategy, \
-    Task2Strategy, DatasetBuilder
+from ails_miccai_uwf4dr_challenge.dataset_strategy import CustomDataset, OriginalDatasetStrategy, CombinedDatasetStrategy, \
+    Task2Strategy, Task1Strategy, Task3Strategy, DatasetBuilder
 from ails_miccai_uwf4dr_challenge.models.architectures.ResNets import ResNet, ResNetVariant
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_automorph_plain import AutoMorphModel
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_convnext import Task1ConvNeXt
+from ails_miccai_uwf4dr_challenge.models.architectures.task3_efficientnetb0 import Task3EfficientNetB0
 from ails_miccai_uwf4dr_challenge.models.architectures.task1_efficientnet_plain import Task1EfficientNetB4
 from ails_miccai_uwf4dr_challenge.models.metrics import sensitivity_score, specificity_score
 from ails_miccai_uwf4dr_challenge.models.trainer import DefaultMetricsEvaluationStrategy, Metric, MetricCalculatedHook, \
-    NumBatches, Trainer, TrainingContext, PersistBestModelOnEpochEndHook, UndersamplingResamplingStrategy
+    NumBatches, Trainer, TrainingContext, PersistBestModelOnEpochEndHook, UndersamplingResamplingStrategy, \
+    FinishWandbTrainingEndHook, WandbLoggingHook, Loaders, SamplingStrategy, SigmoidFocalLoss
 
 
 def train(config=None):
-    wandb.init(project="task1", config=config)
+    wandb.init(project="task3", config=config)
     config = wandb.config
 
-    dataset_strategy = CombinedDatasetStrategy()
-    task_strategy = Task2Strategy()
+    dataset_strategy = OriginalDatasetStrategy()
+    task_strategy = Task3Strategy()
 
     builder = DatasetBuilder(dataset_strategy, task_strategy, split_ratio=0.8)
     train_data, val_data = builder.build()
 
-    train_dataset = CustomDataset(train_data, transform=rotate_affine_flip_choice)
-    val_dataset = CustomDataset(val_data, transform=resize_only)
+    train_dataset = CustomDataset(train_data, transform=transforms_train)
+    val_dataset = CustomDataset(val_data, transform=transforms_val)
 
     train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False)
@@ -55,6 +57,8 @@ def train(config=None):
         model = Task1EfficientNetB4()
     elif config.model_type == 'Task1ConvNeXt':
         model = Task1ConvNeXt()
+    elif config.model_type == 'Task3EfficientNetB0':
+        model = Task3EfficientNetB0()
     elif config.model_type == 'ResNet':
         model = ResNet(model_variant=ResNetVariant.RESNET18)  # or RESNET34, RESNET50
     else:
@@ -107,6 +111,7 @@ def get_augmentations(config):
 
 
 def train(config=None):
+    wandb.init(project=config.project, config=config)
 
     assert config is not None, "Config must be provided"
 
@@ -138,14 +143,18 @@ def train(config=None):
     metrics_eval_strategy = DefaultMetricsEvaluationStrategy(metrics).register_metric_calculated_hook(
         WandbLoggingHook())
 
-    criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=config["learning_rate"])
+    if config.criterion == "BCEWithLogitsLoss":
+        criterion = nn.BCEWithLogitsLoss()
+    elif config.criterion == "SigmoidFocalLoss":
+        criterion = SigmoidFocalLoss(gamma=config.gamma, alpha=config.alpha)
+
+    optimizer = optim.AdamW(model.parameters(), lr=config.lr)
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
     trainer = Trainer(model_run_hardware, loaders, device,
                       metrics_eval_strategy=metrics_eval_strategy,
-                      val_dataloader_adapter=UndersamplingResamplingStrategy(),
-                      train_dataloader_adapter=UndersamplingResamplingStrategy())
+                      val_dataloader_adapter=None,
+                      train_dataloader_adapter=None)
 
     # build a file name for the model weights containing current timestamp and the model class
     training_date = time.strftime("%Y-%m-%d")
@@ -175,16 +184,34 @@ if __name__ == "__main__":
     wandb.require(
         "core")  # The new W&B backend becomes opt-out in version 0.18.0; try it out with `wandb.require("core")`! See https://wandb.me/wandb-core for more information.
 
-    LEARNING_RATE = 1e-3
-    EPOCHS = 15
 
-    config = {
-        "learning_rate": LEARNING_RATE,
-        "dataset": "UWF4DR-DEEPDRID",
-        "epochs": EPOCHS,
-        "batch_size": 4,
-        "model_type": Task1ConvNeXt().__class__.__name__
-    }
+
+    conig = Config(
+    project="task3",
+    dataset=OriginalDatasetStrategy(),
+    task=Task3Strategy(),
+    criterion="BCEWithLogitsLoss",
+    gamma=2.0,
+    alpha=0.25,
+    batch_size=8,
+    epochs=15,
+    lr=0.0001,
+    lr_schedule_factor=0.1,
+    lr_schedule_patience=5,
+    p_gaussblur=5,
+    p_equalize=0.0,
+    p_clahe=0.5,
+    p_horizontalflip=0.5,
+    rotation=15,
+    p_affine=0.3,
+    loss_weight=0.5,
+    num_folds=5,
+    resampling_strategy=None,
+    model="EfficientNetB0",
+    tmax=9,
+    min_lr=1e-6
+)
+
 
     wandb.login(key=WANDB_API_KEY)
 
