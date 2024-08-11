@@ -5,6 +5,10 @@ from torchvision import transforms
 import cv2
 import numpy as np
 from skimage import restoration
+from albumentations.core.transforms_interface import ImageOnlyTransform
+import albumentations as A
+from albumentations.pytorch.transforms import ToTensorV2
+
 def remove_prefix(state_dict, prefix):
     """
     Remove the prefix from state_dict keys.
@@ -53,15 +57,26 @@ class model:
         :return: a float value indicating the probability of class 1.
         """
         # apply the same transformations as during validation
-        transform = transforms.Compose([
+        """transform = transforms.Compose([
             transforms.ToPILImage(),
             transforms.ToTensor(),  # Convert to float32 tensor and scale
             #GreenChannelEnhancement(),  # Apply Wiener filter and CLAHE
             transforms.Resize(size=(400, 508)),
             transforms.Normalize(mean=[0.406, 0.456, 0.485], std=[0.225, 0.224, 0.229])
-        ])
+        ])"""
+        transform = A.Compose([
+            A.Resize(800, 1016),
+            #MultiplyMask(),
+            #A.ToGray(p=1),
+            #GreenChannelEnhancement,
+            A.Equalize(),
+            #A.Resize(770, 1022, p=1), # comment whenever not using DinoV2,
+            A.Normalize(mean=[0.406, 0.485, 0.456], std=[0.225, 0.229, 0.224]),
+            ToTensorV2()])
 
-        image = transform(input_image)
+        #image = transform(input_image)
+        image = transform(image=input_image)['image']
+
         image = image.unsqueeze(0)  # Add batch dimension
         image = image.to(self.device)
 
