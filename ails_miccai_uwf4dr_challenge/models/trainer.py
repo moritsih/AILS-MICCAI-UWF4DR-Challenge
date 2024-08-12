@@ -10,67 +10,8 @@ import os
 from enum import Enum
 import time
 from contextlib import contextmanager
-from torch.utils.data import DataLoader
-from torch.optim import lr_scheduler
 import wandb
 from ails_miccai_uwf4dr_challenge.dataset_strategy import Loaders
-from torch.utils.data import WeightedRandomSampler
-
-import torch.nn.functional as F
-
-import csv
-from pathlib import Path
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-class SigmoidFocalLoss(nn.Module):
-    def __init__(self, alpha: float = -1, gamma: float = 5, reduction: str = "none"):
-        """
-        Initializes the SigmoidFocalLoss class.
-
-        Args:
-            alpha: Weighting factor in range (0,1) to balance positive vs negative examples.
-                   Default = 0.25.
-            gamma: Exponent of the modulating factor (1 - p_t) to balance easy vs hard examples.
-                   Default = 5.
-            reduction: 'none' | 'mean' | 'sum'
-                       'none': No reduction will be applied to the output.
-                       'mean': The output will be averaged.
-                       'sum': The output will be summed.
-        """
-        super(SigmoidFocalLoss, self).__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-        self.reduction = reduction
-
-    def forward(self, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass for computing the Sigmoid Focal Loss.
-
-        Args:
-            inputs: A float tensor of arbitrary shape. The predictions for each example.
-            targets: A float tensor with the same shape as inputs. Stores the binary
-                     classification label for each element in inputs
-                     (0 for the negative class and 1 for the positive class).
-
-        Returns:
-            Loss tensor with the reduction option applied.
-        """
-        inputs = inputs.float()
-        targets = targets.float()
-        p = torch.sigmoid(inputs)
-        ce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
-        p_t = p * targets + (1 - p) * (1 - targets)
-        loss = ce_loss * ((1 - p_t) ** self.gamma)
-
-        if self.alpha >= 0:
-            alpha_t = self.alpha * targets + (1 - self.alpha) * (1 - targets)
-            loss = alpha_t * loss
-
-        return loss
-
-
 
 
 class Timings(Enum):
@@ -257,17 +198,18 @@ class PersistBestModelOnEpochEndHook(EpochEndHook):
 
     def on_epoch_end(self, training_context: TrainingContext, train_results: ModelResultsAndLabels,
                      val_results: ModelResultsAndLabels):
-        
+
         current_val_loss = val_results.model_results.loss
         if current_val_loss < self.best_val_loss:
             self.best_val_loss = current_val_loss
 
             # overwrites the best model for the current fold
-            torch.save(training_context.model.state_dict(), self.save_path + f"_fold_{training_context.num_fold + 1}.pth")
+            torch.save(training_context.model.state_dict(),
+                       self.save_path + f"_fold_{training_context.num_fold + 1}.pth")
 
             print(
                 f"New best weights found at epoch {training_context.current_epoch} with validation loss: {current_val_loss:.4f}. Model saved to {self.save_path}"
-                )
+            )
 
         if self.print_train_results:
             _EpochTrainResultPrinter().print_train_val_result(training_context, train_results, val_results)
@@ -302,9 +244,10 @@ class MetricCalculatedHook(ABC):
                              last_metric_for_epoch: bool):
         pass
 
+
 class WandbLoggingHook(MetricCalculatedHook):
     def on_metric_calculated(self, training_context: TrainingContext, metric: Metric, result,
-                                last_metric_for_epoch: bool):
+                             last_metric_for_epoch: bool):
         wandb.log(data={metric.name: result}, commit=last_metric_for_epoch)
 
 
@@ -326,12 +269,12 @@ class DefaultMetricsEvaluationStrategy(MetricsEvaluationStrategy):
             self.metrics.append(Metric(OtherMetricNames.VAL_LOSS.value, lambda y_true, y_pred: 0,
                                        meta_info=MetricsMetaInfo(print_in_summary=True, print_in_progress=True,
                                                                  evaluate_per_epoch=False, evaluate_per_batch=False)))
-            
+
         if add_lr_as_metric:
             self.metrics.append(Metric(OtherMetricNames.LEARNING_RATE.value, lambda y_true, y_pred: 0,
                                        meta_info=MetricsMetaInfo(print_in_summary=True, print_in_progress=False,
                                                                  evaluate_per_epoch=False, evaluate_per_batch=False)))
-            
+
         self.metric_calculated_hooks: List[MetricCalculatedHook] = []
 
     def evaluate(self, training_context: TrainingContext, model_train_results: ModelResultsAndLabels,
@@ -376,14 +319,13 @@ class DefaultMetricsEvaluationStrategy(MetricsEvaluationStrategy):
         return results
 
     def register_metric_calculated_hook(self,
-        metric_calculated_hook: MetricCalculatedHook) -> 'DefaultMetricsEvaluationStrategy':
+                                        metric_calculated_hook: MetricCalculatedHook) -> 'DefaultMetricsEvaluationStrategy':
         assert metric_calculated_hook is not None
         self.metric_calculated_hooks.append(metric_calculated_hook)
         return self
 
     def _sigmoid(self, z):
         return 1 / (1 + np.exp(-z))
-    
 
 
 class BatchTrainingStrategy(ABC):
@@ -418,15 +360,9 @@ class DataBatchExtractorStrategy(ABC):
     @abstractmethod
     def get_labels(self, batch):
         pass
-    
-    @abstractmethod
-    def get_weights(self, batch):
-        return None
 
     @abstractmethod
     def get_identifiers(self, batch):
-        # Assuming weights are not provided by default, however, we strongly recommend
-        # providing weights for better debugging and analysis
         pass
 
 
@@ -436,10 +372,6 @@ class DefaultDataBatchExtractorStrategy(DataBatchExtractorStrategy):
 
     def get_labels(self, batch):
         return batch[1]
-    
-    def get_weights(self, batch):
-        return batch[2]
-    
 
     def get_identifiers(self, batch):
         # Assuming identifiers are not provided by default, however, we strongly recommend
@@ -447,39 +379,25 @@ class DefaultDataBatchExtractorStrategy(DataBatchExtractorStrategy):
         return None
 
 
-
 class DefaultBatchTrainingStrategy(BatchTrainingStrategy):
-    def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy(), log_csv_path: str = f"train_log.csv", loss_type: str = "bce"):        
+    def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy()):
         self.batch_extractor_strategy = batch_extractor_strategy
-        self.log_csv_path = log_csv_path
-        self.loss_type = loss_type
-        # Ensure CSV file exists with headers
-        if not Path(self.log_csv_path).exists():
-            with open(self.log_csv_path, mode='w', newline='') as file:
-                writer = csv.writer(file)
-                writer.writerow(["Batch", "Loss", "Logits", "Predicted Class", "Ground Truth"])
 
-    def train_batch(self, training_context: TrainingContext, batch, batch_index: int) -> ModelResultsAndLabels:
+    def train_batch(self, training_context: TrainingContext, batch) -> ModelResultsAndLabels:
         inputs = self.batch_extractor_strategy.get_inputs(batch)
         labels = self.batch_extractor_strategy.get_labels(batch)
         identifiers = self.batch_extractor_strategy.get_identifiers(batch)
-        weights = self.batch_extractor_strategy.get_weights(batch)
-        if self.loss_type != 'bce_w_weights':
-            weights = torch.ones_like(labels)
 
         device = training_context.get_device()
 
-        inputs, labels, weights = inputs.to(device), labels.to(device), weights.to(device)
+        inputs, labels = inputs.to(device), labels.to(device)
 
         with training_context.timer.time(Timings.FORWARD_PASS):
             training_context.optimizer.zero_grad()
             outputs = training_context.model(inputs)
 
         with training_context.timer.time(Timings.CALC_LOSS):
-            # Compute the per-sample loss before applying reduction
-            per_sample_loss = training_context.criterion(outputs, labels)
-            weighted_loss = per_sample_loss * weights
-            loss = weighted_loss.mean()  # or sum, depending on your setup
+            loss = training_context.criterion(outputs, labels)
 
         with training_context.timer.time(Timings.BACKWARD_PASS):
             loss.backward()
@@ -487,95 +405,27 @@ class DefaultBatchTrainingStrategy(BatchTrainingStrategy):
         with training_context.timer.time(Timings.OPTIMIZER_STEP):
             training_context.optimizer.step()
 
-        # Log details for each sample in the batch
-        self._log_to_csv(batch_index, weighted_loss, outputs, labels)
-
         return ModelResultsAndLabels(ModelResults(loss.item(), outputs, identifiers), labels)
-
-    def _log_to_csv(self, batch_index, per_sample_loss, outputs, labels):
-        # Calculate predicted classes
-        predicted_classes = (torch.sigmoid(outputs) > 0.5).int()
-
-        # Prepare data for logging
-        with open(self.log_csv_path, mode='a', newline='') as file:
-            writer = csv.writer(file)
-            for i in range(len(labels)):
-                writer.writerow([
-                    batch_index,
-                    per_sample_loss[i].mean().item() if per_sample_loss[i].dim() > 0 else per_sample_loss[i].item(),
-                    outputs[i].cpu().detach().numpy(),
-                    predicted_classes[i].cpu().detach().numpy(),
-                    labels[i].cpu().detach().numpy()
-                ])
 
 
 class DefaultBatchValidationStrategy(BatchValidationStrategy):
-    def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy(), log_csv_path: str = "val_log.csv", loss_type: str = "bce"):
+    def __init__(self, batch_extractor_strategy: DataBatchExtractorStrategy = DefaultDataBatchExtractorStrategy()):
         self.batch_extractor_strategy = batch_extractor_strategy
-        self.log_csv_path = log_csv_path
-        self.loss_type = loss_type
-        # Ensure CSV file exists with headers
-        if not Path(self.log_csv_path).exists():
-            with open(self.log_csv_path, mode='w', newline='') as file:
-                writer = csv.writer(file)
-                writer.writerow(["Batch", "Loss", "Logits", "Predicted Class", "Ground Truth"])
 
-    def validate_batch(self, training_context: TrainingContext, batch, batch_index: int) -> ModelResultsAndLabels:
+    def validate_batch(self, training_context: TrainingContext, batch) -> ModelResultsAndLabels:
         inputs = self.batch_extractor_strategy.get_inputs(batch)
         labels = self.batch_extractor_strategy.get_labels(batch)
         identifiers = self.batch_extractor_strategy.get_identifiers(batch)
-        weights = self.batch_extractor_strategy.get_weights(batch)
-        if self.loss_type != 'bce_w_weights':
-            weights = torch.ones_like(labels)
+
         device = training_context.get_device()
 
-        inputs, labels, weights = inputs.to(device), labels.to(device), weights.to(device)
+        inputs, labels = inputs.to(device), labels.to(device)
 
         outputs = training_context.model(inputs)
-        
-        # Compute the per-sample loss before applying reduction
-        per_sample_loss = training_context.criterion(outputs, labels)
-        weighted_loss = per_sample_loss * weights
-        loss = weighted_loss.mean()  # or sum, depending on your setup
-
-        # Log details for each sample in the batch
-        self._log_to_csv(batch_index, weighted_loss, outputs, labels)
+        loss = training_context.criterion(outputs, labels)
 
         return ModelResultsAndLabels(ModelResults(loss.item(), outputs, identifiers), labels)
 
-    def _log_to_csv(self, batch_index, per_sample_loss, outputs, labels):
-        # Calculate predicted classes
-        predicted_classes = (torch.sigmoid(outputs) > 0.5).int()
-
-        # Prepare data for logging
-        with open(self.log_csv_path, mode='a', newline='') as file:
-            writer = csv.writer(file)
-            for i in range(len(labels)):
-                writer.writerow([
-                    batch_index,
-                    per_sample_loss[i].mean().item() if per_sample_loss[i].dim() > 0 else per_sample_loss[i].item(),
-                    outputs[i].cpu().detach().numpy(),
-                    predicted_classes[i].cpu().detach().numpy(),
-                    labels[i].cpu().detach().numpy()
-                ])
-
-
-
-
-
-class SamplingStrategy(ABC):
-    @abstractmethod
-    def sampler(self):
-        pass
-
-class WeightedSamplingStrategy(SamplingStrategy):
-    def __init__(self, sample_weights):
-        assert sample_weights is not None
-        self.sample_weights = sample_weights
-
-    def sampler(self):
-        sampler = WeightedRandomSampler(self.sample_weights, num_samples=len(self.sample_weights), replacement=True)
-        return sampler
 
 class DataloaderPerEpochAdapter(ABC):
     @abstractmethod
@@ -642,15 +492,15 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
         training_context.model.train()
         running_loss = 0.0
         total = 0
-        avg_loss = float('inf')
+        avg_loss = inf
         results = ModelResultsAndLabels(ModelResults(avg_loss, [], None), [])
 
         train_loader = self.dataloader_adapter.apply(train_loader)
 
-        with tqdm(enumerate(train_loader), total=len(train_loader)) as pbar:
+        with tqdm(train_loader) as pbar:
             pbar.set_description(f"{training_context.get_epoch_info()} - Starting training... ")
 
-            for batch_index, batch in pbar:
+            for batch in pbar:
                 batch_size = self.get_asserted_batch_size(batch)
                 if training_context.num_batches != NumBatches.ALL and pbar.n >= training_context.num_batches.value:
                     pbar.set_postfix_str(
@@ -658,7 +508,7 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
                     break
 
                 with training_context.timer.time(Timings.BATCH_PROCESSING):
-                    batch_results = self.batch_strategy.train_batch(training_context, batch, batch_index)
+                    batch_results = self.batch_strategy.train_batch(training_context, batch)
                     results.add_batch_results(batch_results)
 
                 loss = batch_results.model_results.loss
@@ -682,7 +532,6 @@ class DefaultEpochTrainingStrategy(EpochTrainingStrategy):
         return inputs.size(0)
 
 
-
 class DefaultEpochValidationStrategy(EpochValidationStrategy):
     def __init__(self, batch_strategy=None, dataloader_adapter: DataloaderPerEpochAdapter = None):
         self.batch_strategy = batch_strategy or DefaultBatchValidationStrategy()
@@ -692,23 +541,23 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
         training_context.model.eval()
         running_loss = 0.0
         total = 0
-        avg_loss = float('inf')
+        avg_loss = inf
         results = ModelResultsAndLabels(ModelResults(avg_loss, [], None), [])
 
         val_loader = self.dataloader_adapter.apply(val_loader)
 
         with torch.no_grad():
-            with tqdm(enumerate(val_loader), total=len(val_loader)) as pbar:
+            with tqdm(val_loader) as pbar:
                 pbar.set_description(f"{training_context.get_epoch_info()} - Starting validation...")
-                for batch_index, batch in pbar:
+                for batch in pbar:
                     batch_size = self.get_asserted_batch_size(batch)
                     if training_context.num_batches != NumBatches.ALL and pbar.n >= training_context.num_batches.value:
                         pbar.set_postfix_str(
-                            f"Validating for {training_context.num_batches} batches only for initial testing")
+                            f"Training for {training_context.num_batches} batches only for initial testing")
                         break
 
                     with torch.no_grad():
-                        batch_results = self.batch_strategy.validate_batch(training_context, batch, batch_index)
+                        batch_results = self.batch_strategy.validate_batch(training_context, batch)
                         results.add_batch_results(batch_results)
 
                     loss = batch_results.model_results.loss
@@ -730,8 +579,6 @@ class DefaultEpochValidationStrategy(EpochValidationStrategy):
         assert inputs.size(0) == labels.size(
             0), f"Batch size mismatch between inputs and labels : {inputs.size(0)} != {labels.size(0)}"
         return inputs.size(0)
-    
-
 
 
 class TrainingRunHardware:
@@ -746,11 +593,11 @@ class TrainingRunHardware:
         self.lr_scheduler = lr_scheduler
 
 
-
 class TrainingRunStartHook(ABC):
     @abstractmethod
     def on_training_run_start(self, wandb_task, wandb_groupname, wandb_config, wandb_notes):
         pass
+
 
 class InitWandbTrainingStartHook(TrainingRunStartHook):
 
@@ -764,7 +611,8 @@ class InitWandbTrainingStartHook(TrainingRunStartHook):
         self.wandb_notes = wandb_notes
 
     def on_training_run_start(self):
-        wandb.init(project=self.wandb_task, config=self.wandb_config, group=self.wandb_groupname, notes=self.wandb_notes)
+        wandb.init(project=self.wandb_task, config=self.wandb_config, group=self.wandb_groupname,
+                   notes=self.wandb_notes)
         wandb.config = self.wandb_config
 
 
@@ -773,47 +621,52 @@ class TrainingRunEndHook(ABC):
     def on_training_run_end(self):
         pass
 
+
 class FinishWandbTrainingEndHook(TrainingRunEndHook):
     def on_training_run_end(self):
         wandb.finish()
 
 
 class Trainer:
-    def __init__(self, 
-                training_run_hardware: TrainingRunHardware = None, 
-                loaders : List[Loaders] = None,
-                device=None,
-                training_strategy: EpochTrainingStrategy = None,
-                validation_strategy: EpochValidationStrategy = None,
-                metrics_eval_strategy: MetricsEvaluationStrategy = None,
-                train_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
-                val_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter()
-                ):
-        
-        if loaders is not None:
-            if len(loaders) == 0:
-                raise ValueError("At least one Loader must be provided")
+    def __init__(self,
+                 training_run_hardware: TrainingRunHardware = None,
+                 loader: Loaders = None,
+                 device=None,
+                 training_strategy: EpochTrainingStrategy = None,
+                 validation_strategy: EpochValidationStrategy = None,
+                 metrics_eval_strategy: MetricsEvaluationStrategy = None,
+                 train_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
+                 val_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
+                 num_fold: int = 0
+                 ):
+
+        if loader is not None:
+            if len(loader.train_loader) == 0 or len(loader.val_loader) == 0:
+                raise ValueError("Train and validation loaders must be provided")
             else:
-                self.loaders = loaders
+                self.loader = loader
+        else:
+            raise ValueError("Train and validation loaders must be provided")
 
         if training_run_hardware is None:
             raise ValueError("Must provide training run hardware with model, criterion, optimizer, and lr scheduler")
 
         self.training_run_hardware = training_run_hardware
 
-        self.device = device        
+        self.device = device
+        self.num_fold = num_fold
         self.timer = Timer()
 
         self.training_strategy = (training_strategy or
                                   DefaultEpochTrainingStrategy(
                                       DefaultBatchTrainingStrategy(),
                                       dataloader_adapter=train_dataloader_adapter))
-        
+
         self.validation_strategy = (validation_strategy or
                                     DefaultEpochValidationStrategy(
                                         DefaultBatchValidationStrategy(),
                                         dataloader_adapter=val_dataloader_adapter))
-        
+
         self.metrics_eval_strategy = metrics_eval_strategy or DefaultMetricsEvaluationStrategy([])
         self.epoch_end_hooks: List[EpochEndHook] = []
         self.epoch_train_end_hooks: List[EpochTrainEndHook] = []
@@ -832,15 +685,14 @@ class Trainer:
     def add_epoch_train_end_hook(self, hook: EpochTrainEndHook) -> 'Trainer':
         self.epoch_train_end_hooks.append(hook)
         return self
-    
+
     def add_training_run_start_hook(self, hook: TrainingRunStartHook) -> 'Trainer':
         self.training_run_start_hooks.append(hook)
         return self
-    
+
     def add_training_run_end_hook(self, hook: TrainingRunEndHook) -> 'Trainer':
         self.training_run_end_hooks.append(hook)
         return self
-
 
     def train(self, num_epochs: int, num_batches: NumBatches = NumBatches.ALL):
 
@@ -849,50 +701,46 @@ class Trainer:
         if not self.epoch_end_hooks:
             self.epoch_end_hooks.append(DefaultEpochEndHook())
 
+        model = self.training_run_hardware.model
+        criterion = self.training_run_hardware.criterion
+        optimizer = self.training_run_hardware.optimizer
+        lr_scheduler = self.training_run_hardware.lr_scheduler
 
-        for i, loaders in enumerate(self.loaders):
+        if self.device.type != next(model.parameters()).device.type:
+            print(
+                f"Moving model to device {self.device}, because it is different "
+                f"from the model's device {next(model.parameters()).device}")
+            model.to(self.device)
 
-            model = self.training_run_hardware.model
-            criterion = self.training_run_hardware.criterion
-            optimizer = self.training_run_hardware.optimizer
-            lr_scheduler = self.training_run_hardware.lr_scheduler
+        training_context = TrainingContext(model, criterion, optimizer, lr_scheduler, self.timer, num_epochs,
+                                           num_batches, num_fold=self.num_fold)
 
-            if self.device.type != next(model.parameters()).device.type:
-                print(
-                    f"Moving model to device {self.device}, because it is different "
-                    f"from the model's device {next(model.parameters()).device}")
-                model.to(self.device)
+        for hook in self.training_run_start_hooks:
+            hook.on_training_run_start()
 
-            for hook in self.training_run_start_hooks:
-                hook.on_training_run_start()
+        for epoch in range(num_epochs):
+            training_context.current_epoch = epoch + 1
+            model_train_results: ModelResultsAndLabels = self.training_strategy.train(training_context,
+                                                                                      self.loader.train_loader)
+            model_val_results: ModelResultsAndLabels = self.validation_strategy.validate(training_context,
+                                                                                         self.loader.val_loader)
 
-            training_context = TrainingContext(model, criterion, optimizer, lr_scheduler, self.timer, num_epochs, num_batches, num_fold=i)
+            if training_context.lr_scheduler is not None:
+                if isinstance(training_context.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    training_context.lr_scheduler.step(model_val_results.model_results.loss)
+                else:
+                    training_context.lr_scheduler.step()
 
-            for epoch in range(num_epochs):
-                training_context.current_epoch = epoch + 1
-    
-                model_train_results: ModelResultsAndLabels = self.training_strategy.train(training_context,
-                                                                                        loaders.train_loader)
-                model_val_results: ModelResultsAndLabels = self.validation_strategy.validate(training_context,
-                                                                                        loaders.val_loader)
-                
-                if training_context.lr_scheduler is not None:
-                    if isinstance(training_context.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                        training_context.lr_scheduler.step(model_val_results.model_results.loss)
-                    else:
-                        training_context.lr_scheduler.step()
+            for hook in self.epoch_train_end_hooks:
+                hook.on_epoch_train_end(training_context, model_train_results)
 
-                for hook in self.epoch_train_end_hooks:
-                    hook.on_epoch_train_end(training_context, model_train_results)
+            for hook in self.epoch_validation_end_hooks:
+                hook.on_epoch_validation_end(training_context, model_val_results)
 
-                for hook in self.epoch_validation_end_hooks:
-                    hook.on_epoch_validation_end(training_context, model_val_results)
+            self.metrics_eval_strategy.evaluate(training_context, model_train_results, model_val_results)
 
-                self.metrics_eval_strategy.evaluate(training_context, model_train_results, model_val_results)
+            for hook in self.epoch_end_hooks:
+                hook.on_epoch_end(training_context, model_train_results, model_val_results)
 
-                for hook in self.epoch_end_hooks:
-                    hook.on_epoch_end(training_context, model_train_results, model_val_results)
-            
-            for hook in self.training_run_end_hooks:
-                hook.on_training_run_end()
-
+        for hook in self.training_run_end_hooks:
+            hook.on_training_run_end()
