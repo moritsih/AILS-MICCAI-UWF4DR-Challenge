@@ -595,7 +595,7 @@ class TrainingRunHardware:
 
 class TrainingRunStartHook(ABC):
     @abstractmethod
-    def on_training_run_start(self, wandb_task, wandb_groupname, wandb_config, wandb_notes):
+    def on_training_run_start(self):
         pass
 
 
