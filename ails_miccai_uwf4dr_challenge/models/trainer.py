@@ -10,8 +10,16 @@ import os
 from enum import Enum
 import time
 from contextlib import contextmanager
+<<<<<<< HEAD
+=======
+
+>>>>>>> d7caa81 (cv should work)
 import wandb
 from ails_miccai_uwf4dr_challenge.dataset_strategy import Loaders
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 
 class Timings(Enum):
@@ -626,11 +634,14 @@ class FinishWandbTrainingEndHook(TrainingRunEndHook):
     def on_training_run_end(self):
         wandb.finish()
 
-
 class Trainer:
     def __init__(self, 
                 training_run_hardware: TrainingRunHardware = None, 
+<<<<<<< HEAD
                 loader : Loaders = None,
+=======
+                loader : List[Loaders] = None,
+>>>>>>> d7caa81 (cv should work)
                 device=None,
                 training_strategy: EpochTrainingStrategy = None,
                 validation_strategy: EpochValidationStrategy = None,
@@ -639,23 +650,39 @@ class Trainer:
                 val_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
                 num_fold: int = 0
                 ):
+<<<<<<< HEAD
 
         if loader is not None:
+=======
+        self.loader = loader 
+        self.training_run_hardware = training_run_hardware
+
+        """if loader is not None:
+>>>>>>> d7caa81 (cv should work)
             if len(loader.train_loader) == 0 or len(loader.val_loader) == 0:
                 raise ValueError("Train and validation loaders must be provided")
             else:
                 self.loader = loader
         else:
+<<<<<<< HEAD
             raise ValueError("Train and validation loaders must be provided")
+=======
+            raise ValueError("Train and validation loaders must be provided")"""
+>>>>>>> d7caa81 (cv should work)
 
         if training_run_hardware is None:
             raise ValueError("Must provide training run hardware with model, criterion, optimizer, and lr scheduler")
 
-        self.training_run_hardware = training_run_hardware
 
+<<<<<<< HEAD
         self.device = device
+=======
+        self.device = device        
+>>>>>>> d7caa81 (cv should work)
         self.num_fold = num_fold
         self.timer = Timer()
+
+
 
         self.training_strategy = (training_strategy or
                                   DefaultEpochTrainingStrategy(
@@ -706,6 +733,7 @@ class Trainer:
         optimizer = self.training_run_hardware.optimizer
         lr_scheduler = self.training_run_hardware.lr_scheduler
 
+<<<<<<< HEAD
         if self.device.type != next(model.parameters()).device.type:
             print(
                 f"Moving model to device {self.device}, because it is different "
@@ -724,11 +752,37 @@ class Trainer:
             model_val_results: ModelResultsAndLabels = self.validation_strategy.validate(training_context,
                                                                                     self.loader.val_loader)
 
+=======
+        model = self.training_run_hardware.model
+        criterion = self.training_run_hardware.criterion
+        optimizer = self.training_run_hardware.optimizer
+        lr_scheduler = self.training_run_hardware.lr_scheduler
+
+        if self.device.type != next(model.parameters()).device.type:
+            print(
+                f"Moving model to device {self.device}, because it is different "
+                f"from the model's device {next(model.parameters()).device}")
+            model.to(self.device)
+
+        training_context = TrainingContext(model, criterion, optimizer, lr_scheduler, self.timer, num_epochs, num_batches, num_fold=self.num_fold)
+
+        for hook in self.training_run_start_hooks:
+            hook.on_training_run_start()
+
+        for epoch in range(num_epochs):
+            training_context.current_epoch = epoch + 1
+            model_train_results: ModelResultsAndLabels = self.training_strategy.train(training_context,
+                                                                                    self.loader.train_loader)
+            model_val_results: ModelResultsAndLabels = self.validation_strategy.validate(training_context,
+                                                                                    self.loader.val_loader)
+            
+>>>>>>> d7caa81 (cv should work)
             if training_context.lr_scheduler is not None:
                 if isinstance(training_context.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
                     training_context.lr_scheduler.step(model_val_results.model_results.loss)
                 else:
                     training_context.lr_scheduler.step()
+<<<<<<< HEAD
 
             for hook in self.epoch_train_end_hooks:
                 hook.on_epoch_train_end(training_context, model_train_results)
@@ -743,3 +797,79 @@ class Trainer:
 
         for hook in self.training_run_end_hooks:
             hook.on_training_run_end()
+=======
+
+            for hook in self.epoch_train_end_hooks:
+                hook.on_epoch_train_end(training_context, model_train_results)
+
+            for hook in self.epoch_validation_end_hooks:
+                hook.on_epoch_validation_end(training_context, model_val_results)
+
+            self.metrics_eval_strategy.evaluate(training_context, model_train_results, model_val_results)
+
+            for hook in self.epoch_end_hooks:
+                hook.on_epoch_end(training_context, model_train_results, model_val_results)
+        
+        for hook in self.training_run_end_hooks:
+            hook.on_training_run_end()
+
+
+
+class SigmoidFocalLoss(nn.Module):
+    def __init__(self, alpha: float = 0.25, gamma: float = 5, reduction: str = "mean"):
+        """
+        Initializes the SigmoidFocalLoss class.
+
+        Args:
+            alpha: Weighting factor in range (0,1) to balance positive vs negative examples.
+                   Default = 0.25.
+            gamma: Exponent of the modulating factor (1 - p_t) to balance easy vs hard examples.
+                   Default = 5.
+            reduction: 'none' | 'mean' | 'sum'
+                       'none': No reduction will be applied to the output.
+                       'mean': The output will be averaged.
+                       'sum': The output will be summed.
+        """
+        super(SigmoidFocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass for computing the Sigmoid Focal Loss.
+
+        Args:
+            inputs: A float tensor of arbitrary shape. The predictions for each example.
+            targets: A float tensor with the same shape as inputs. Stores the binary
+                     classification label for each element in inputs
+                     (0 for the negative class and 1 for the positive class).
+
+        Returns:
+            Loss tensor with the reduction option applied.
+        """
+        inputs = inputs.float()
+        targets = targets.float()
+        p = torch.sigmoid(inputs)
+        ce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
+        p_t = p * targets + (1 - p) * (1 - targets)
+        loss = ce_loss * ((1 - p_t) ** self.gamma)
+
+        if self.alpha >= 0:
+            alpha_t = self.alpha * targets + (1 - self.alpha) * (1 - targets)
+            loss = alpha_t * loss
+
+        if self.reduction == "mean":
+            loss = loss.mean()
+        elif self.reduction == "sum":
+            loss = loss.sum()
+
+        return loss
+
+# Example usage:
+# loss_fn = SigmoidFocalLoss(alpha=0.25, gamma=5, reduction='mean')
+# inputs = torch.randn((10, 1), requires_grad=True)  # Example predictions
+# targets = torch.randint(0, 2, (10, 1)).float()    # Example targets
+# loss = loss_fn(inputs, targets)
+# print(loss)
+>>>>>>> d7caa81 (cv should work)

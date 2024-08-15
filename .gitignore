@@ -14,6 +14,9 @@ models/task_2_AutoMorph/*.pth
 models/task_2_EfficientNet0/*.pth
 models/task_3_EfficientNet0/*.pth
 models/best_final_submissions/*
+models/old_models/*
+models/task3_Efficientnet0_crossval/*
+models/task_1_efficientnetb0_crossval/*
 
 *.pth
 
