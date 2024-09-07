@@ -6,6 +6,7 @@
 # models downloaded
 models/AutoMorph/*.pth
 models/example_submission/*.pth
+models/best_final_submissions/*
 models/EfficientNet/*.pth
 # logs
 wandb/

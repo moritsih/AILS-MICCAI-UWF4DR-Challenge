@@ -319,10 +319,11 @@ class CustomDataset(Dataset):
     val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
     '''
 
-    def __init__(self, data, transform=None):
+    def __init__(self, data, transform=None, load_like_challenge_analyzers=False):
 
         self.transform = transform
         self.data = data
+        self.load_like_challenge_analyzers = load_like_challenge_analyzers
 
         print("Dataset length: ", len(self.data))
         
@@ -337,17 +338,20 @@ class CustomDataset(Dataset):
         # convert label to tensor and add an extra dimension so it can be used in the loss function
         label = torch.tensor(label, dtype=torch.float32).unsqueeze(0)
 
-        img = cv2.imread(str(img_path))
-
-        # in the challenge description they say that they use BGR color for evaluation
-        #img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) # DO NOT USE THIS LINE, JUST FOR CLARIFICATION
-
-        if self.transform:
-            img = self.transform(image=img)['image']
+        if self.load_like_challenge_analyzers:
+            # in the challenge description they say that they use BGR color for evaluation
+            #so, they pass 1 to the imread function second param - but this is also the default value, so actually irrelevant, but for the sake of clarity, we leave it in:
+            # cv::IMREAD_COLOR_BGR = 1
+            img = cv2.imread(str(img_path), 1)
+            #img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) # DO NOT USE THIS LINE, HERE JUST FOR INFORMATION: this is how you would convert back to RGB
+            #never transform in this branch - the transform we have to do ourselves in the predict function for submissions
+        else:
+            img = cv2.imread(str(img_path))
+            
+            if self.transform:
+                img = self.transform(image=img)['image']
 
         return img, label
-    
-
 
 @app.command()
 def main():
