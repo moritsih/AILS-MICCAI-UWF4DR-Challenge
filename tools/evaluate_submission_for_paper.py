@@ -1,4 +1,5 @@
 import os
+import time  # Import time module to measure inference time
 import torch
 from tqdm import tqdm
 from sklearn.metrics import roc_auc_score, accuracy_score
@@ -15,6 +16,7 @@ class ModelEvaluator:
         """
         Initialize the evaluator with the model and dataset builder.
 
+        :param model: Model to be evaluated.
         :param model_path: Path to the directory where the model is stored.
         :param dataset_builder: DatasetBuilder object to build the dataset.
         """
@@ -30,7 +32,7 @@ class ModelEvaluator:
 
     def evaluate(self):
         """
-        Evaluate the model on the validation set.
+        Evaluate the model on the validation set and compute average inference time.
         """
         # Load model
         self.load_model()
@@ -48,21 +50,30 @@ class ModelEvaluator:
 
         all_labels = []
         all_preds = []
+        total_inference_time = 0  # Initialize total inference time
 
         with torch.no_grad():
             for images, labels in tqdm(val_loader, desc="Evaluating"):
                 # Extract the single image from the batch and move to device
-                image = images[0] # Remove batch dimension
-                image = image.to(self.model.device).numpy()  # Remove batch dimension
-                                
+                image = images[0].to(self.model.device).numpy()  # Remove batch dimension and convert to NumPy
                 labels = labels.to(self.model.device)  # No need to remove batch dimension for labels
 
-                # Get model prediction for the single image
-                output = self.model.predict(image)  # Pass single image to predict
+                # Measure the inference time
+                start_time = time.time()
+                output = self.model.predict(image)  # Get model prediction for the single image
+                end_time = time.time()
+                
+                # Calculate the inference time for this sample
+                inference_time = end_time - start_time
+                total_inference_time += inference_time  # Accumulate total inference time
 
                 # Store predictions and labels
                 all_preds.append(output)  # `output` is already a float
                 all_labels.extend(labels.cpu().numpy())  # `labels` is already compatible
+
+        # Calculate average inference time
+        avg_inference_time = total_inference_time / len(val_data)
+        print(f"Average Inference Time: {avg_inference_time:.6f} seconds per image")
 
         # Calculate metrics
         auc_score = roc_auc_score(all_labels, all_preds)
