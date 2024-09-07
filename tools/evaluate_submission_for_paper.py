@@ -2,8 +2,9 @@ import os
 import time  # Import time module to measure inference time
 import torch
 from tqdm import tqdm
-from sklearn.metrics import roc_auc_score, accuracy_score
-from torchvision.transforms import ToPILImage
+from sklearn.metrics import roc_auc_score, accuracy_score, confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 from models.best_final_submissions.task_1.model import model as Task1Model
 from models.best_final_submissions.task_2.model import model as Task2Model
@@ -32,7 +33,7 @@ class ModelEvaluator:
 
     def evaluate(self):
         """
-        Evaluate the model on the validation set and compute average inference time.
+        Evaluate the model on the validation set, compute average inference time, and generate a confusion matrix.
         """
         # Load model
         self.load_model()
@@ -68,7 +69,7 @@ class ModelEvaluator:
                 total_inference_time += inference_time  # Accumulate total inference time
 
                 # Store predictions and labels
-                all_preds.append(output)  # `output` is already a float
+                all_preds.append(1 if output > 0.5 else 0)  # Convert output to binary classification
                 all_labels.extend(labels.cpu().numpy())  # `labels` is already compatible
 
         # Calculate average inference time
@@ -77,11 +78,22 @@ class ModelEvaluator:
 
         # Calculate metrics
         auc_score = roc_auc_score(all_labels, all_preds)
-        accuracy = accuracy_score(all_labels, [1 if p > 0.5 else 0 for p in all_preds])
+        accuracy = accuracy_score(all_labels, all_preds)
 
         print(f"ROC AUC Score: {auc_score:.4f}")
         print(f"Accuracy: {accuracy:.4f}")
 
+        # Compute confusion matrix
+        cm = confusion_matrix(all_labels, all_preds)
+        print(f"Confusion Matrix:\n{cm}")
+
+        # Plot confusion matrix
+        plt.figure(figsize=(6, 6))
+        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=["Negative", "Positive"], yticklabels=["Negative", "Positive"])
+        plt.xlabel("Predicted")
+        plt.ylabel("True")
+        plt.title("Confusion Matrix")
+        plt.show()
 
 if __name__ == "__main__":
     # Define the paths and strategies for dataset creation
