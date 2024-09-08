@@ -11,9 +11,9 @@ import seaborn as sns
 from torchcam.methods import GradCAM
 from torchcam.utils import overlay_mask
 
-from models.best_final_submissions.task_1.model import model as Task1Model
-from models.best_final_submissions.task_2.model import model as Task2Model
-from models.best_final_submissions.task_3.model import model as Task3Model
+#from models.best_final_submissions.task_1.model import model as Task1Model
+#from models.best_final_submissions.task_2.model import model as Task2Model
+#from models.best_final_submissions.task_3.model import model as Task3Model
 from ails_miccai_uwf4dr_challenge.dataset import ChallengeTaskType, DatasetBuilder, CustomDataset, DatasetOriginationType
 from ails_miccai_uwf4dr_challenge.dataset_strategy import CombinedDatasetStrategy, Task1Strategy, Task2Strategy, Task3Strategy
 from tools.submission_evaluation.confidence_visualizer import ConfidenceVisualizer
