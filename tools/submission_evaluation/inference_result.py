@@ -1,7 +1,7 @@
 import numpy as np
 
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 
 class InferenceResult:
