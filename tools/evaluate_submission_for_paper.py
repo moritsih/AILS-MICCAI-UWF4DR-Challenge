@@ -36,7 +36,9 @@ class ModelEvaluator:
         """
         Load the model from the checkpoint.
         """
-        self.model.load(self.model_path)
+        checkpoint_path = os.path.abspath(self.model_path)
+        assert os.path.isdir(checkpoint_path), f"Model checkpoint not found at {checkpoint_path}"
+        self.model.load(checkpoint_path) 
 
     def find_last_conv_layer(self, model):
         """
@@ -115,7 +117,7 @@ class ModelEvaluator:
 
             # Determine the predicted label and create an InferenceResult object
             predicted_label = 1 if output > 0.5 else 0
-            results.append(InferenceResult(output, image_path, image_dims, labels.item(), predicted_label, None, inference_time))
+            results.append(InferenceResult(output, image_path, image_dims, labels.item(), predicted_label, inference_time, None))
             self.save_results(results, save_path)
 
         self.save_results(results, save_path)
@@ -180,7 +182,7 @@ if __name__ == "__main__":
     
     for task in [ChallengeTaskType.TASK1, ChallengeTaskType.TASK2, ChallengeTaskType.TASK3]:
         # Define the paths and strategies for dataset creation
-        model_path = f"models/best_final_submissions/{task}"
+        model_path_prefix = f"models/best_final_submissions/"
     
         # Use CombinedDatasetStrategy and Task1Strategy to evaluate on the combined dataset for Task 1
         dataset_strategy = CombinedDatasetStrategy()
@@ -188,12 +190,15 @@ if __name__ == "__main__":
         if task == ChallengeTaskType.TASK1:
             task_strategy = Task1Strategy()
             model = Task1Model()
+            model_path = os.path.join(model_path_prefix, "task_1")
         elif task == ChallengeTaskType.TASK2:
             task_strategy = Task2Strategy()
             model = Task2Model()
+            model_path = os.path.join(model_path_prefix, "task_2")
         elif task == ChallengeTaskType.TASK3:
             task_strategy = Task3Strategy()
             model = Task3Model()
+            model_path = os.path.join(model_path_prefix, "task_3")
         else:
             raise ValueError("Unknown task_strategy : "+task_strategy)
         
@@ -209,8 +214,10 @@ if __name__ == "__main__":
         
         results_file_name = f"tools/submission_evaluation/results_{task.value}.json"
 
-        #evaluator.evaluate_model(results_file_name)
-        
-        results: List[InferenceResult] = evaluator.load_results(results_file_name)
+        if os.path.exists(results_file_name):
+            results: List[InferenceResult] = evaluator.load_results(results_file_name)
+        else:
+            evaluator.evaluate_model(results_file_name)
+            results: List[InferenceResult] = evaluator.load_results(results_file_name)
         
         evaluator.visualize_results(results)

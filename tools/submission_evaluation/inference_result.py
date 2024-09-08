@@ -28,11 +28,11 @@ class InferenceResult:
         assert isinstance(image_dims, tuple) and len(image_dims) == 2, "Image dims should be a tuple of two integers."
         assert isinstance(true_label, float), "True label should be a float."
         assert isinstance(predicted_label, int), "Predicted label should be an integer."
-        if activation_map is not None:
-            assert isinstance(activation_map, np.ndarray), "Activation map should be a numpy array if provided."
-            assert activation_map.ndim == 2, f"Activation map must be 2D, but got shape {activation_map.shape}."
         if inference_time is not None:
             assert isinstance(inference_time, float), "Inference time should be a float if provided."
+        if activation_map is not None:
+            assert isinstance(activation_map, np.ndarray), "Activation map should be a numpy array if provided, is of type : " + str(type(activation_map))
+            assert activation_map.ndim == 2, f"Activation map must be 2D, but got shape {activation_map.shape}."
 
         self.output: float = output
         self.image_path: str = image_path
