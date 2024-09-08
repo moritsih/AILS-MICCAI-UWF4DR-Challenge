@@ -351,7 +351,7 @@ class CustomDataset(Dataset):
             if self.transform:
                 img = self.transform(image=img)['image']
 
-        return img, label
+        return img, label, str(img_path)
 
 @app.command()
 def main():

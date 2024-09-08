@@ -1,16 +1,19 @@
 import os
-import time  # Import time module to measure inference time
+import time
 import torch
+import numpy as np
 from tqdm import tqdm
 from sklearn.metrics import roc_auc_score, accuracy_score, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
+from PIL import ImageDraw
 
 from models.best_final_submissions.task_1.model import model as Task1Model
 from models.best_final_submissions.task_2.model import model as Task2Model
 from models.best_final_submissions.task_3.model import model as Task3Model
 from ails_miccai_uwf4dr_challenge.dataset import ChallengeTaskType, DatasetBuilder, CustomDataset, DatasetOriginationType
 from ails_miccai_uwf4dr_challenge.dataset_strategy import CombinedDatasetStrategy, Task1Strategy, Task2Strategy, Task3Strategy
+from tools.submission_evaluation.confidence_visualizer import ConfidenceResult, ConfidenceVisualizer
 
 class ModelEvaluator:
     def __init__(self, model, model_path, dataset_builder):
@@ -24,6 +27,7 @@ class ModelEvaluator:
         self.model = model
         self.model_path = model_path
         self.dataset_builder = dataset_builder
+        self.visualizer = ConfidenceVisualizer()
 
     def load_model(self):
         """
@@ -51,12 +55,14 @@ class ModelEvaluator:
 
         all_labels = []
         all_preds = []
+        results = []
         total_inference_time = 0  # Initialize total inference time
 
         with torch.no_grad():
-            for images, labels in tqdm(val_loader, desc="Evaluating"):
+            for images, labels, image_paths in tqdm(val_loader, desc="Evaluating"):
                 # Extract the single image from the batch and move to device
-                image = images[0].to(self.model.device).numpy()  # Remove batch dimension and convert to NumPy
+                image = images[0].to(self.model.device).numpy()  # Remove batch dimension and convert to NumPy (because of transforms in the model expecting NumPy for this format)
+                image_path = image_paths[0]
                 labels = labels.to(self.model.device)  # No need to remove batch dimension for labels
 
                 # Measure the inference time
@@ -68,9 +74,20 @@ class ModelEvaluator:
                 inference_time = end_time - start_time
                 total_inference_time += inference_time  # Accumulate total inference time
 
-                # Store predictions and labels
-                all_preds.append(1 if output > 0.5 else 0)  # Convert output to binary classification
+                # Store predictions, labels, and results
+                predicted_label = 1 if output > 0.5 else 0
+                all_preds.append(predicted_label)
                 all_labels.extend(labels.cpu().numpy())  # `labels` is already compatible
+
+                # Compute confidence as the absolute difference between predicted and true labels
+                results.append(ConfidenceResult(output, image_path, labels.item(), predicted_label))
+
+        # Sort images by classification confidence
+        sorted_results = self.visualizer.sort_by_confidence(results)
+
+        self.visualizer.concat_and_display_image(sorted_results, labels=[0])
+        
+        self.visualizer.concat_and_display_image(sorted_results, labels=[1])
 
         # Calculate average inference time
         avg_inference_time = total_inference_time / len(val_data)
@@ -94,6 +111,7 @@ class ModelEvaluator:
         plt.ylabel("True")
         plt.title("Confusion Matrix")
         plt.show()
+
 
 if __name__ == "__main__":
     # Define the paths and strategies for dataset creation
