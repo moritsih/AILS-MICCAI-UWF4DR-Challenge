@@ -177,25 +177,40 @@ class ModelEvaluator:
         plt.show()
 
 if __name__ == "__main__":
-    # Define the paths and strategies for dataset creation
-    model_path = "models/best_final_submissions/task_1"  # Adjust the path as needed
-
-    # Use CombinedDatasetStrategy and Task1Strategy to evaluate on the combined dataset for Task 1
-    dataset_strategy = CombinedDatasetStrategy()
-    task_strategy = Task1Strategy()
-
-    # Build the dataset
-    dataset_builder = DatasetBuilder(
-        dataset=DatasetOriginationType.ORIGINAL,  # Use the enum value
-        task=ChallengeTaskType.TASK1,  # Task type enum
-        split_ratio=0.8
-    )
-
-    # Initialize the evaluator with the model and dataset
-    evaluator = ModelEvaluator(Task1Model(), model_path, dataset_builder)
-
-    #evaluator.evaluate_model("results.json")
     
-    results: List[InferenceResult] = evaluator.load_results("results.json")
+    for task in [ChallengeTaskType.TASK1, ChallengeTaskType.TASK2, ChallengeTaskType.TASK3]:
+        # Define the paths and strategies for dataset creation
+        model_path = f"models/best_final_submissions/{task}"
     
-    evaluator.visualize_results(results)
+        # Use CombinedDatasetStrategy and Task1Strategy to evaluate on the combined dataset for Task 1
+        dataset_strategy = CombinedDatasetStrategy()
+        
+        if task == ChallengeTaskType.TASK1:
+            task_strategy = Task1Strategy()
+            model = Task1Model()
+        elif task == ChallengeTaskType.TASK2:
+            task_strategy = Task2Strategy()
+            model = Task2Model()
+        elif task == ChallengeTaskType.TASK3:
+            task_strategy = Task3Strategy()
+            model = Task3Model()
+        else:
+            raise ValueError("Unknown task_strategy : "+task_strategy)
+        
+        # Build the dataset
+        dataset_builder = DatasetBuilder(
+            dataset=DatasetOriginationType.ORIGINAL,  # Use the enum value
+            task=task,
+            split_ratio=0.8
+        )
+
+        # Initialize the evaluator with the model and dataset
+        evaluator = ModelEvaluator(model, model_path, dataset_builder)
+        
+        results_file_name = f"tools/submission_evaluation/results_{task.value}.json"
+
+        #evaluator.evaluate_model(results_file_name)
+        
+        results: List[InferenceResult] = evaluator.load_results(results_file_name)
+        
+        evaluator.visualize_results(results)

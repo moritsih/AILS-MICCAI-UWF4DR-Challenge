@@ -2,21 +2,25 @@ import cv2
 import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
-
 from typing import List, Optional
-import numpy as np
 import json
 
+from tools.submission_evaluation.inference_result import InferenceResult
+
 class ConfidenceVisualizer:
-    def __init__(self, image_size=(100, 100), images_per_row=10):
+    def __init__(self, image_size=(100, 100), images_per_row=5, best_images = 5, worst_images = 10):
         """
         Initialize the ConfidenceVisualizer with desired image size and number of images per row.
 
         :param image_size: Tuple indicating the size of each image (width, height).
         :param images_per_row: Number of images to display per row.
+        :param best_images: Number of best confidence images to display.
+        :param worst_images: Number of worst confidence images to display.
         """
         self.image_size = image_size
         self.images_per_row = images_per_row
+        self.best_images = best_images
+        self.worst_images = worst_images
 
     def sort_by_confidence(self, results):
         """
@@ -48,13 +52,13 @@ class ConfidenceVisualizer:
         :param labels: Optional list of labels to filter the results. If None, display all results.
         :return: PIL Image object representing the large concatenated image.
         """
-        # Filter results by the specified labels if provided
         if labels is not None:
             results = [result for result in results if result.true_label in labels or result.predicted_label in labels]
 
-        # Sort the filtered results by confidence
         sorted_results = self.sort_by_confidence(results)
-
+        
+        sorted_results : List[InferenceResult] = sorted_results[:self.worst_images] + sorted_results[-self.best_images:]
+        
         num_images = len(sorted_results)
         rows = (num_images // self.images_per_row) + 1
 
@@ -64,33 +68,46 @@ class ConfidenceVisualizer:
         for idx, result in enumerate(sorted_results):
             # Load image from the path
             img = cv2.imread(result.image_path)
+            assert img is not None, f"Image could not be loaded from path: {result.image_path}"
+
             img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(img_rgb)
             pil_img = pil_img.resize(self.image_size)
 
-            # Convert Grad-CAM to a heatmap
-            heatmap = cv2.applyColorMap(np.uint8(255 * result.activation_map), cv2.COLORMAP_JET)
-            heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
-            heatmap = Image.fromarray(heatmap).resize(self.image_size)
+            # Convert activation map to a heatmap
+            activation_map = result.activation_map
+            assert isinstance(activation_map, np.ndarray), "Activation map must be a numpy array."
+            assert activation_map.ndim == 2, f"Activation map must be 2D, but got shape {activation_map.shape}."
 
-            # Overlay heatmap on the original image
-            combined_img = Image.blend(pil_img, heatmap, alpha=0.5)
+            # Ensure activation map is in 8-bit format
+            if activation_map.dtype != np.uint8:
+                activation_map = np.uint8(255 * activation_map)
+
+            heatmap = cv2.applyColorMap(activation_map, cv2.COLORMAP_JET)
+
+            # Convert heatmap to PIL Image
+            heatmap_pil = Image.fromarray(heatmap)
+            heatmap_pil = heatmap_pil.resize(self.image_size)
+
+            # Combine original image and heatmap
+            combined_img = Image.blend(pil_img, heatmap_pil, alpha=0.5)
 
             # Create a bar to represent confidence
-            bar_height = 10
-            bar = Image.new('RGB', (self.image_size[0], bar_height), self.get_confidence_color(result.confidence))
+            bar_height = int(self.image_size[1]/10)
+            bar_color = self.get_confidence_color(result.confidence)
+            bar = Image.new('RGB', (self.image_size[0], bar_height), bar_color)
 
             # Draw the true and predicted labels on the bar
             draw = ImageDraw.Draw(bar)
             font = ImageFont.load_default()
-            text = f'True: {result.true_label}, Pred: {result.predicted_label}'
-            text_width, text_height = draw.textsize(text, font=font)
+            text = f'Pred: {result.output:.2f}, True: {result.true_label:.0f}'
+            text_width, text_height = draw.textbbox((0, 0), text, font=font)[2:4]
             draw.text(((self.image_size[0] - text_width) / 2, (bar_height - text_height) / 2), text, fill="white", font=font)
 
             # Create an image with the picture and the bar below it
             img_with_bar = Image.new('RGB', (self.image_size[0], self.image_size[1] + bar_height))
             img_with_bar.paste(combined_img, (0, 0))
-            img_with_bar.paste(bar, (0, self.image_size[1]))
+            img_with_bar.paste(bar, (0, self.image_size[1]))            
 
             # Paste the combined image onto the canvas
             x_offset = (idx % self.images_per_row) * self.image_size[0]
