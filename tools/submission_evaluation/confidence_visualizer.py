@@ -8,7 +8,7 @@ import json
 from tools.submission_evaluation.inference_result import InferenceResult
 
 class ConfidenceVisualizer:
-    def __init__(self, image_size=(100, 100), images_per_row=5, best_images = 5, worst_images = 10, display_original_images=False):
+    def __init__(self, image_size=(100, 100), images_per_row=5, best_images = 5, worst_images = 10, display_combined=True, display_grad_cam=False, display_original=False):
         """
         Initialize the ConfidenceVisualizer with desired image size and number of images per row.
 
@@ -24,7 +24,9 @@ class ConfidenceVisualizer:
         self.images_per_row = images_per_row
         self.best_images = best_images
         self.worst_images = worst_images
-        self.display_original_images = display_original_images
+        self.display_combined = display_combined
+        self.display_grad_cam = display_grad_cam
+        self.display_original = display_original
 
     def sort_by_confidence(self, results):
         """
@@ -51,7 +53,7 @@ class ConfidenceVisualizer:
     def create_bar(self, confidence, bar_text):
         # Create a bar to represent confidence
         bar_color = self.get_confidence_color(confidence)
-        bar = Image.new('RGB', (self.image_height, self.bar_height), bar_color)
+        bar = Image.new('RGB', (self.image_width, self.bar_height), bar_color)
 
         # Draw the true and predicted labels on the bar
         draw = ImageDraw.Draw(bar)
@@ -81,7 +83,7 @@ class ConfidenceVisualizer:
         rows = (num_images // self.images_per_row)
         bar_height = int(self.image_height/10)
         
-        how_many_images_per_row = 2 if self.display_original_images else 1
+        how_many_images_per_row = (1 if self.display_combined else 0) + (1 if self.display_grad_cam else 0) + (1 if self.display_original else 0)
         row_height = self.image_height * how_many_images_per_row + bar_height
         
         canvas = Image.new('RGB', (self.image_width * self.images_per_row, row_height * rows))
@@ -117,9 +119,16 @@ class ConfidenceVisualizer:
             
             # Create an image with the picture and the bar below it
             img_with_bar = Image.new('RGB', (self.image_width, row_height))
-            img_with_bar.paste(combined_img, (0, 0))
-            if self.display_original_images:
-                img_with_bar.paste(pil_img, (0, self.image_height))
+            current_height = 0
+            if self.display_combined:
+                img_with_bar.paste(combined_img, (0, current_height))
+                current_height += self.image_height
+            if self.display_grad_cam:
+                img_with_bar.paste(heatmap_pil, (0, current_height))
+                current_height += self.image_height
+            if self.display_original:
+                img_with_bar.paste(pil_img, (0, current_height))
+                current_height += self.image_height
             img_with_bar.paste(bar, (0, row_height-bar_height))            
 
             # Paste the combined image onto the canvas

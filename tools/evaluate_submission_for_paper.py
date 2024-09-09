@@ -152,7 +152,7 @@ class ModelEvaluator:
         :param results: List of InferenceResult objects.
         """
         # Visualization and metrics calculation
-        visualizer = ConfidenceVisualizer(display_original_images=True)
+        visualizer = ConfidenceVisualizer(display_original=True, display_grad_cam=True, display_combined=True)
         sorted_results = visualizer.sort_by_confidence(results)
         visualizer.concat_and_display_image(self.task, sorted_results, labels=[0])
         visualizer.concat_and_display_image(self.task, sorted_results, labels=[1])
