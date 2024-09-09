@@ -53,7 +53,7 @@ class ConfidenceVisualizer:
         :return: PIL Image object representing the large concatenated image.
         """
         if labels is not None:
-            results = [result for result in results if result.true_label in labels or result.predicted_label in labels]
+            results = [result for result in results if result.true_label in labels]
 
         sorted_results = self.sort_by_confidence(results)
         
@@ -116,7 +116,7 @@ class ConfidenceVisualizer:
 
         return canvas
 
-    def concat_and_display_image(self, results, labels=None):
+    def concat_and_display_image(self, task, results, labels=None):
         """
         Display a concatenated image for the specified labels.
 
@@ -125,7 +125,7 @@ class ConfidenceVisualizer:
         """
         image = self.create_concatenated_image(results, labels)
         label_text = ', '.join(map(str, labels)) if labels else 'All'
-        self.display_image(image, title=f'Images Sorted by Confidence for Label(s): {label_text}')
+        self.display_image(image, title=f'{task.value}: Images Sorted by Confidence for Label(s): {label_text}')
 
     def display_image(self, image, title='Images Sorted by Classification Confidence'):
         """

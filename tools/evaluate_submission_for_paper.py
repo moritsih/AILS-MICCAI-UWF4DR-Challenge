@@ -11,23 +11,25 @@ import seaborn as sns
 from torchcam.methods import GradCAM
 from torchcam.utils import overlay_mask
 
-#from models.best_final_submissions.task_1.model import model as Task1Model
-#from models.best_final_submissions.task_2.model import model as Task2Model
-#from models.best_final_submissions.task_3.model import model as Task3Model
+from models.best_final_submissions.task_1.model import model as Task1Model
+from models.best_final_submissions.task_2.model import model as Task2Model
+from models.best_final_submissions.task_3.model import model as Task3Model
 from ails_miccai_uwf4dr_challenge.dataset import ChallengeTaskType, DatasetBuilder, CustomDataset, DatasetOriginationType
 from ails_miccai_uwf4dr_challenge.dataset_strategy import CombinedDatasetStrategy, Task1Strategy, Task2Strategy, Task3Strategy
 from tools.submission_evaluation.confidence_visualizer import ConfidenceVisualizer
 from tools.submission_evaluation.inference_result import InferenceResult
 
 class ModelEvaluator:
-    def __init__(self, model, model_path, dataset_builder):
+    def __init__(self, task, model, model_path, dataset_builder):
         """
         Initialize the evaluator with the model and dataset builder.
 
+        :param task: current task
         :param model: Model to be evaluated.
         :param model_path: Path to the directory where the model is stored.
         :param dataset_builder: DatasetBuilder object to build the dataset.
         """
+        self.task = task
         self.model = model
         self.model_path = model_path
         self.dataset_builder = dataset_builder
@@ -152,8 +154,8 @@ class ModelEvaluator:
         # Visualization and metrics calculation
         visualizer = ConfidenceVisualizer()
         sorted_results = visualizer.sort_by_confidence(results)
-        visualizer.concat_and_display_image(sorted_results, labels=[0])
-        visualizer.concat_and_display_image(sorted_results, labels=[1])
+        visualizer.concat_and_display_image(self.task, sorted_results, labels=[0])
+        visualizer.concat_and_display_image(self.task, sorted_results, labels=[1])
 
         # Calculate average inference time
         avg_inference_time = sum(result.inference_time for result in results) / len(results)
@@ -210,7 +212,7 @@ if __name__ == "__main__":
         )
 
         # Initialize the evaluator with the model and dataset
-        evaluator = ModelEvaluator(model, model_path, dataset_builder)
+        evaluator = ModelEvaluator(task, model, model_path, dataset_builder)
         
         results_file_name = f"tools/submission_evaluation/results_{task.value}.json"
 
