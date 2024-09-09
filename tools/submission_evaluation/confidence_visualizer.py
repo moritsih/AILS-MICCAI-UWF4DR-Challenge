@@ -8,7 +8,7 @@ import json
 from tools.submission_evaluation.inference_result import InferenceResult
 
 class ConfidenceVisualizer:
-    def __init__(self, image_size=(100, 100), images_per_row=5, best_images = 5, worst_images = 10):
+    def __init__(self, image_size=(100, 100), images_per_row=5, best_images = 5, worst_images = 10, display_original_images=False):
         """
         Initialize the ConfidenceVisualizer with desired image size and number of images per row.
 
@@ -18,9 +18,13 @@ class ConfidenceVisualizer:
         :param worst_images: Number of worst confidence images to display.
         """
         self.image_size = image_size
+        self.image_width = int(image_size[0])
+        self.image_height = int(image_size[1])
+        self.bar_height = int(self.image_height/10)
         self.images_per_row = images_per_row
         self.best_images = best_images
         self.worst_images = worst_images
+        self.display_original_images = display_original_images
 
     def sort_by_confidence(self, results):
         """
@@ -43,6 +47,20 @@ class ConfidenceVisualizer:
         red = int(normalized_confidence * 255)
         green = int((1 - normalized_confidence) * 255)
         return (red, green, 0)  # RGB color
+    
+    def create_bar(self, confidence, bar_text):
+        # Create a bar to represent confidence
+        bar_color = self.get_confidence_color(confidence)
+        bar = Image.new('RGB', (self.image_height, self.bar_height), bar_color)
+
+        # Draw the true and predicted labels on the bar
+        draw = ImageDraw.Draw(bar)
+        font = ImageFont.load_default()
+        text_width, text_height = draw.textbbox((0, 0), bar_text, font=font)[2:4]
+        draw.text(((self.image_width - text_width) / 2, (self.bar_height - text_height) / 2), bar_text, fill="white", font=font)
+        
+        return bar
+
 
     def create_concatenated_image(self, results, labels=None):
         """
@@ -61,10 +79,12 @@ class ConfidenceVisualizer:
         
         num_images = len(sorted_results)
         rows = (num_images // self.images_per_row)
-        bar_height = int(self.image_size[1]/10)
-
-        # Create an empty canvas to display the images
-        canvas = Image.new('RGB', (self.image_size[0] * self.images_per_row, (self.image_size[1] +bar_height) * rows))
+        bar_height = int(self.image_height/10)
+        
+        how_many_images_per_row = 2 if self.display_original_images else 1
+        row_height = self.image_height * how_many_images_per_row + bar_height
+        
+        canvas = Image.new('RGB', (self.image_width * self.images_per_row, row_height * rows))
 
         for idx, result in enumerate(sorted_results):
             # Load image from the path
@@ -92,26 +112,19 @@ class ConfidenceVisualizer:
 
             # Combine original image and heatmap
             combined_img = Image.blend(pil_img, heatmap_pil, alpha=0.5)
-
-            # Create a bar to represent confidence
-            bar_color = self.get_confidence_color(result.confidence)
-            bar = Image.new('RGB', (self.image_size[0], bar_height), bar_color)
-
-            # Draw the true and predicted labels on the bar
-            draw = ImageDraw.Draw(bar)
-            font = ImageFont.load_default()
-            text = f'Pred: {result.output:.2f}, True: {result.true_label:.0f}'
-            text_width, text_height = draw.textbbox((0, 0), text, font=font)[2:4]
-            draw.text(((self.image_size[0] - text_width) / 2, (bar_height - text_height) / 2), text, fill="white", font=font)
-
+            
+            bar = self.create_bar(result.confidence, f'Pred: {result.output:.2f}, True: {result.true_label:.0f}')
+            
             # Create an image with the picture and the bar below it
-            img_with_bar = Image.new('RGB', (self.image_size[0], self.image_size[1] + bar_height))
+            img_with_bar = Image.new('RGB', (self.image_width, row_height))
             img_with_bar.paste(combined_img, (0, 0))
-            img_with_bar.paste(bar, (0, self.image_size[1]))            
+            if self.display_original_images:
+                img_with_bar.paste(pil_img, (0, self.image_height))
+            img_with_bar.paste(bar, (0, row_height-bar_height))            
 
             # Paste the combined image onto the canvas
-            x_offset = (idx % self.images_per_row) * self.image_size[0]
-            y_offset = (idx // self.images_per_row) * (self.image_size[1] + bar_height)
+            x_offset = (idx % self.images_per_row) * self.image_width
+            y_offset = (idx // self.images_per_row) * row_height
             canvas.paste(img_with_bar, (x_offset, y_offset))
 
         return canvas
