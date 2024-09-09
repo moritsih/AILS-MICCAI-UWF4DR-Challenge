@@ -182,6 +182,12 @@ class ModelEvaluator:
 
 if __name__ == "__main__":
     
+    #ATTENTION, read this carefully: 
+    # if you just want to do the visualization, you can run this script as is - it will load the results from the json files and visualize them
+    # if you want to run the inference again, you need to execute the data downloads - the models are downloaded into the models/best_final_submissions folder
+    #then you need to edit model.py files: add a param: with_grads=True to the predict method, and implement this accordingly (basically an if / else around the model forward call to return the gradients or not, I am sure you will be able to manage
+    # - also, in the with grads = true case, return the output unprocessed)
+    
     for task in [ChallengeTaskType.TASK1, ChallengeTaskType.TASK2, ChallengeTaskType.TASK3]:
         # Define the paths and strategies for dataset creation
         model_path_prefix = f"models/best_final_submissions/"
