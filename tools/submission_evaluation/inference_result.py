@@ -1,7 +1,11 @@
+import os
 import numpy as np
 from typing import Optional, Tuple
 
 class InferenceResult:
+    
+    PREFIX_TO_REMOVE = os.getcwd() + os.sep
+
     def __init__(self,
                  output: float,
                  image_path: str,
@@ -50,20 +54,6 @@ class InferenceResult:
         """
         return abs(self.output - self.true_label)
 
-    def to_dict(self) -> dict:
-        """
-        Convert the InferenceResult object to a dictionary.
-        """
-        return {
-            'output': self.output,
-            'image_path': self.image_path,
-            'image_dims': self.image_dims,
-            'true_label': self.true_label,
-            'predicted_label': self.predicted_label,
-            'inference_time': self.inference_time,
-            'activation_map': self.activation_map.tolist() if self.activation_map is not None else None
-        }
-
     @classmethod
     def from_dict(cls, data: dict):
         """
@@ -79,8 +69,44 @@ class InferenceResult:
             if activation_map is not None:
                 assert activation_map.ndim == 2, f"Activation map must be 2D, but got shape {activation_map.shape}."
 
-            return cls(data['output'], data['image_path'], tuple(data['image_dims']),
+            # Process the image path to remove the prefix and convert to a relative path
+            image_path = data['image_path']
+            if image_path.startswith(cls.PREFIX_TO_REMOVE):
+                image_path = image_path[len(cls.PREFIX_TO_REMOVE):]
+            else:
+                # Convert any other absolute path to a relative path
+                image_path = os.path.relpath(image_path)
+
+            # Reconstruct the absolute path and check if the file exists
+            absolute_image_path = os.path.join(os.getcwd(), image_path)
+            if not os.path.isfile(absolute_image_path):
+                raise FileNotFoundError(f"The image file '{absolute_image_path}' created from '{image_path}' and working dir : '{os.getcwd()}' does not exist.")
+
+            return cls(data['output'], image_path, tuple(data['image_dims']),
                        data['true_label'], data['predicted_label'], data.get('inference_time'), activation_map)
-        except (KeyError, TypeError, ValueError) as e:
+        except (KeyError, TypeError, ValueError, FileNotFoundError) as e:
             raise ValueError(f"Error in creating InferenceResult from dict: {e}")
-        
+
+    def to_dict(self):
+        """
+        Convert the InferenceResult object to a dictionary.
+        """
+        try:
+            # Reconstruct relative path by removing current working directory prefix
+            image_path = self.image_path
+            if os.path.isabs(image_path):
+                image_path = os.path.relpath(image_path, os.getcwd())
+
+            return {
+                'output': self.output,
+                'image_path': image_path,
+                'image_dims': list(self.image_dims),
+                'true_label': self.true_label,
+                'predicted_label': self.predicted_label,
+                'inference_time': self.inference_time,
+                'activation_map': self.activation_map.tolist() if self.activation_map is not None else None
+            }
+        except Exception as e:
+            raise ValueError(f"Error in converting InferenceResult to dict: {e}")
+
+    # Implement other class methods and attributes as needed...

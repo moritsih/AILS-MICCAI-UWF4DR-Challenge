@@ -224,6 +224,7 @@ if __name__ == "__main__":
 
         if os.path.exists(results_file_name):
             results: List[InferenceResult] = evaluator.load_results(results_file_name)
+            evaluator.save_results(results, results_file_name)
         else:
             evaluator.evaluate_model(results_file_name)
             results: List[InferenceResult] = evaluator.load_results(results_file_name)
