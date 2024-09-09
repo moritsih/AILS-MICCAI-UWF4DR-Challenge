@@ -60,10 +60,11 @@ class ConfidenceVisualizer:
         sorted_results : List[InferenceResult] = sorted_results[:self.worst_images] + sorted_results[-self.best_images:]
         
         num_images = len(sorted_results)
-        rows = (num_images // self.images_per_row) + 1
+        rows = (num_images // self.images_per_row)
+        bar_height = int(self.image_size[1]/10)
 
         # Create an empty canvas to display the images
-        canvas = Image.new('RGB', (self.image_size[0] * self.images_per_row, self.image_size[1] * rows + 10 * rows))
+        canvas = Image.new('RGB', (self.image_size[0] * self.images_per_row, (self.image_size[1] +bar_height) * rows))
 
         for idx, result in enumerate(sorted_results):
             # Load image from the path
@@ -93,7 +94,6 @@ class ConfidenceVisualizer:
             combined_img = Image.blend(pil_img, heatmap_pil, alpha=0.5)
 
             # Create a bar to represent confidence
-            bar_height = int(self.image_size[1]/10)
             bar_color = self.get_confidence_color(result.confidence)
             bar = Image.new('RGB', (self.image_size[0], bar_height), bar_color)
 
