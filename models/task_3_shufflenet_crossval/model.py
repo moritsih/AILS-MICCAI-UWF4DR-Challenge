@@ -60,7 +60,7 @@ class model:
 
         checkpoint_paths = [os.path.join(dir_path, self.checkpoint) for self.checkpoint in checkpoints]
 
-        state_dicts = [torch.load(checkpoint_path, map_location=self.device) for checkpoint_path in checkpoint_paths]
+        state_dicts = [torch.load(checkpoint_path, map_location=self.device) for checkpoint_path in checkpoint_paths] 
         state_dicts = [remove_prefix(state_dict, 'model.') for state_dict in state_dicts] # we need to remove the prefix as on training EfficientNet was wrapped
 
         def make_model(state_dict):

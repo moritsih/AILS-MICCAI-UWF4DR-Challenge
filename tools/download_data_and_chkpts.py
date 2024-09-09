@@ -64,7 +64,37 @@ class FileDownloaderDecryptor:
                 )
             ]
         )
-
+        TASK_1_BEST_SUBMISSION = FileCategory(
+            target_dir="models/best_final_submissions/task_1",
+            files=[
+                FileInfo(
+                    url="https://drive.google.com/file/d/1BRSXDFxLOGP-pNpWxPlaRVZb73zI5_SO/view?usp=drive_link",
+                    filename="task_1_submission.zip",
+                    uncompress=True
+                )
+            ]
+        )
+        TASK_2_BEST_SUBMISSION = FileCategory(
+            target_dir="models/best_final_submissions/task_2",
+            files=[
+                FileInfo(
+                    url="https://drive.google.com/file/d/1-t0IS0bY1ej7xSSESOhWA4WqZYg2_jS0/view?usp=drive_link",
+                    filename="task_2_submission.zip",
+                    uncompress=True
+                )
+            ]
+        )
+        TASK_3_BEST_SUBMISSION = FileCategory(
+            target_dir="models/best_final_submissions/task_3",
+            files=[
+                FileInfo(
+                    url="https://drive.google.com/file/d/1OdEVHPM6i9AlVqW1zYpzMZY1-PSfhFWl/view?usp=drive_link",
+                    filename="task_3_submission.zip",
+                    uncompress=True
+                )
+            ]
+        )
+        
     def __init__(self, key_path="aes256.key", download_directory="data/downloads"):
         # Determine the directory of the current script
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -79,6 +109,10 @@ class FileDownloaderDecryptor:
 
         # Initialize target directories for each category
         for category in self.FileCategoryEnum:
+            if not hasattr(category.value, 'target_dir'):
+                raise ValueError(f"Target directory not specified for category '{category.name}'")
+            
+            print(f"Creating target directory '{category.value.target_dir}'")
             os.makedirs(os.path.join(self.project_root, category.value.target_dir), exist_ok=True)
 
     def load_key(self):

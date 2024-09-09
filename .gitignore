@@ -13,6 +13,7 @@ models/task_1_EfficientNetV2/*.pth
 models/task_2_AutoMorph/*.pth
 models/task_2_EfficientNet0/*.pth
 models/task_3_EfficientNet0/*.pth
+models/best_final_submissions/*
 
 *.pth
 

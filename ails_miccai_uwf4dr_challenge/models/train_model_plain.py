@@ -86,13 +86,13 @@ def get_augmentations(config):
     ])
 
     transforms_val = A.Compose([
-        A.Resize(800, 1016, p=1),
-        #MultiplyMask(p=1),
-        A.Normalize(mean=[0.406, 0.485, 0.456], std=[0.225, 0.229, 0.224], p=1),
-        #A.Resize(770, 1022, p=1), # uncomment whenever using DinoV2
-        ToTensorV2(p=1)
-    ])
-
+            A.Resize(800, 1016, p=1),
+            #MultiplyMask(p=1),
+            A.Normalize(mean=[0.406, 0.485, 0.456], std=[0.225, 0.229, 0.224], p=1),
+            #A.Resize(770, 1022, p=1), # uncomment whenever using DinoV2
+            ToTensorV2(p=1)
+        ])
+    
     return transforms_train, transforms_val
 
 
@@ -131,8 +131,8 @@ def train(config=None):
     wandb_init_hook = InitWandbTrainingStartHook(config.wandb_task, wandb_group_name, wandb_config, wandb_notes)
 
     for i, loader in enumerate(loaders):
-        metrics_eval_strategy = DefaultMetricsEvaluationStrategy(metrics).register_metric_calculated_hook(
-            WandbLoggingHook())
+
+        metrics_eval_strategy = DefaultMetricsEvaluationStrategy(metrics).register_metric_calculated_hook(WandbLoggingHook())
 
         model_run_hardware = create_training_run_hardware(config, device)
 
@@ -141,6 +141,7 @@ def train(config=None):
                           train_dataloader_adapter=config.resampling_strategy,
                           val_dataloader_adapter=config.resampling_strategy,
                           num_fold=i)
+
 
         trainer.add_training_run_start_hook(wandb_init_hook)
 
@@ -154,6 +155,7 @@ def train(config=None):
 
         # what should happen when a training run ends?
         trainer.add_training_run_end_hook(FinishWandbTrainingEndHook())
+
 
         # "First train 2 epochs 2 batches to check if everything works - you can comment this line after the code has stabilized..."
         #print("First train 2 epochs 2 batches to check if everything works - "
@@ -177,11 +179,10 @@ if __name__ == "__main__":
 
     config = Config(
 
-        dataset=MiniDatasetStrategy(),  #CombinedDatasetStrategy(),
+        dataset=MiniDatasetStrategy(),#CombinedDatasetStrategy(),
         task=Task1Strategy(),
-        resampling_strategy=OversamplingResamplingStrategy(),
-        # or UndersamplingResamplingStrategy() or DoNothingDataloaderPerEpochAdapter()
-        wandb_task="test",  # or task 1, task2 or task3
+        resampling_strategy=OversamplingResamplingStrategy(), # or UndersamplingResamplingStrategy() or DoNothingDataloaderPerEpochAdapter()
+        wandb_task="test", # or task 1, task2 or task3
 
         learning_rate=LEARNING_RATE,
         epochs=EPOCHS,

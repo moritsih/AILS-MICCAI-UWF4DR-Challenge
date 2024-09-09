@@ -628,17 +628,17 @@ class FinishWandbTrainingEndHook(TrainingRunEndHook):
 
 
 class Trainer:
-    def __init__(self,
-                 training_run_hardware: TrainingRunHardware = None,
-                 loader: Loaders = None,
-                 device=None,
-                 training_strategy: EpochTrainingStrategy = None,
-                 validation_strategy: EpochValidationStrategy = None,
-                 metrics_eval_strategy: MetricsEvaluationStrategy = None,
-                 train_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
-                 val_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
-                 num_fold: int = 0
-                 ):
+    def __init__(self, 
+                training_run_hardware: TrainingRunHardware = None, 
+                loader : Loaders = None,
+                device=None,
+                training_strategy: EpochTrainingStrategy = None,
+                validation_strategy: EpochValidationStrategy = None,
+                metrics_eval_strategy: MetricsEvaluationStrategy = None,
+                train_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
+                val_dataloader_adapter: DataloaderPerEpochAdapter = DoNothingDataloaderPerEpochAdapter(),
+                num_fold: int = 0
+                ):
 
         if loader is not None:
             if len(loader.train_loader) == 0 or len(loader.val_loader) == 0:
@@ -712,8 +712,7 @@ class Trainer:
                 f"from the model's device {next(model.parameters()).device}")
             model.to(self.device)
 
-        training_context = TrainingContext(model, criterion, optimizer, lr_scheduler, self.timer, num_epochs,
-                                           num_batches, num_fold=self.num_fold)
+        training_context = TrainingContext(model, criterion, optimizer, lr_scheduler, self.timer, num_epochs, num_batches, num_fold=self.num_fold)
 
         for hook in self.training_run_start_hooks:
             hook.on_training_run_start()
@@ -721,9 +720,9 @@ class Trainer:
         for epoch in range(num_epochs):
             training_context.current_epoch = epoch + 1
             model_train_results: ModelResultsAndLabels = self.training_strategy.train(training_context,
-                                                                                      self.loader.train_loader)
+                                                                                    self.loader.train_loader)
             model_val_results: ModelResultsAndLabels = self.validation_strategy.validate(training_context,
-                                                                                         self.loader.val_loader)
+                                                                                    self.loader.val_loader)
 
             if training_context.lr_scheduler is not None:
                 if isinstance(training_context.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
