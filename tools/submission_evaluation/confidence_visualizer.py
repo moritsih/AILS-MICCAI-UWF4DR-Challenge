@@ -2,13 +2,12 @@ import cv2
 import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
-from typing import List, Optional
-import json
+from typing import List
 
 from tools.submission_evaluation.inference_result import InferenceResult
 
 class ConfidenceVisualizer:
-    def __init__(self, image_size=(100, 100), images_per_row=5, best_images = 5, worst_images = 10, display_combined=True, display_grad_cam=False, display_original=False):
+    def __init__(self, image_size=(500, 500), images_per_row=5, best_images = 5, worst_images = 10, display_combined=True, display_grad_cam=False, display_original=False, display_activation_map_as_text=False):
         """
         Initialize the ConfidenceVisualizer with desired image size and number of images per row.
 
@@ -27,6 +26,7 @@ class ConfidenceVisualizer:
         self.display_combined = display_combined
         self.display_grad_cam = display_grad_cam
         self.display_original = display_original
+        self.display_activation_map_as_text = display_activation_map_as_text
 
     def sort_by_confidence(self, results):
         """
@@ -57,12 +57,63 @@ class ConfidenceVisualizer:
 
         # Draw the true and predicted labels on the bar
         draw = ImageDraw.Draw(bar)
-        font = ImageFont.load_default()
+        font = self.get_available_font(int(self.bar_height * 0.8))
         text_width, text_height = draw.textbbox((0, 0), bar_text, font=font)[2:4]
         draw.text(((self.image_width - text_width) / 2, (self.bar_height - text_height) / 2), bar_text, fill="white", font=font)
         
         return bar
 
+    def apply_blue_to_red_colormap(self, activation_map):
+        # Normalize the activation map to range [0, 1] (it is already in range but for safety)
+        normalized_map = activation_map / np.max(activation_map)
+
+        colormap = plt.get_cmap('coolwarm')  # 'coolwarm' goes from blue to red
+        colored_map = colormap(normalized_map)
+
+        # Convert to RGB format and scale to [0, 255]
+        colored_map = (colored_map[:, :, :3] * 255).astype(np.uint8)
+        
+        return colored_map
+    
+    def get_available_font(self, font_size):
+        """
+        Returns the first available font path on the system with the specified size.
+        """
+        return ImageFont.load_default(font_size)
+    
+    def add_value_overlay(self, image, activation_map):
+        """
+        Draws a grid of rounded values (0-9) on top of the image.
+        
+        :param image: The PIL image to draw on.
+        :param activation_map: The original activation map.
+        :return: PIL Image with overlaid text.
+        """
+        # Round the activation map values to the nearest 0.1 and scale to integers 0-9
+        rounded_values = np.round(activation_map / np.max(activation_map) * 9).astype(int)
+        
+        # Create a drawing context
+        draw = ImageDraw.Draw(image)
+
+        # Choose a font size based on image size (you may need to adjust)
+        font_size = max(image.size) // 30
+        font = self.get_available_font(font_size)
+
+        # Define grid cell size
+        rows, cols = activation_map.shape
+        cell_width = image.width // cols
+        cell_height = image.height // rows
+
+        # Overlay text for each grid cell
+        for i in range(rows):
+            for j in range(cols):
+                text = str(rounded_values[i, j])
+                # Calculate position to center the text
+                x = j * cell_width + cell_width // 2
+                y = i * cell_height + cell_height // 2
+                draw.text((x, y), text, fill='white', font=font, anchor='mm')  # Draw text at the center
+
+        return image
 
     def create_concatenated_image(self, results, labels=None):
         """
@@ -77,9 +128,27 @@ class ConfidenceVisualizer:
 
         sorted_results = self.sort_by_confidence(results)
         
-        sorted_results : List[InferenceResult] = sorted_results[:self.worst_images] + sorted_results[-self.best_images:]
+        mid = len(sorted_results) // 2
+
+        sorted_results_filtered : List[InferenceResult] = []
+        
+        if self.best_images > 0:
+            sorted_results_filtered += sorted_results[-self.best_images:]
+        elif self.worst_images < 0:
+            sorted_results_filtered  += sorted_results[-mid:]
+            
+        if self.worst_images > 0:
+            sorted_results_filtered += sorted_results[:self.worst_images]
+        elif self.worst_images < 0:
+            sorted_results_filtered += sorted_results[:mid]
+        
+        sorted_results = sorted_results_filtered
         
         num_images = len(sorted_results)
+        
+        if num_images == 0:
+            raise ValueError("No images found for the specified params.")
+        
         rows = (num_images // self.images_per_row)
         bar_height = int(self.image_height/10)
         
@@ -97,20 +166,20 @@ class ConfidenceVisualizer:
             pil_img = Image.fromarray(img_rgb)
             pil_img = pil_img.resize(self.image_size)
 
-            # Convert activation map to a heatmap
             activation_map = result.activation_map
             assert isinstance(activation_map, np.ndarray), "Activation map must be a numpy array."
             assert activation_map.ndim == 2, f"Activation map must be 2D, but got shape {activation_map.shape}."
 
-            # Ensure activation map is in 8-bit format
-            if activation_map.dtype != np.uint8:
-                activation_map = np.uint8(255 * activation_map)
+            # Normalize the activation map to the range [0, 1]
+            activation_map = activation_map / np.max(activation_map)
 
-            heatmap = cv2.applyColorMap(activation_map, cv2.COLORMAP_JET)
-
-            # Convert heatmap to PIL Image
+            heatmap = self.apply_blue_to_red_colormap(activation_map)
+ 
             heatmap_pil = Image.fromarray(heatmap)
             heatmap_pil = heatmap_pil.resize(self.image_size)
+
+            if self.display_activation_map_as_text:
+                heatmap_pil = self.add_value_overlay(heatmap_pil, activation_map)
 
             # Combine original image and heatmap
             combined_img = Image.blend(pil_img, heatmap_pil, alpha=0.5)
