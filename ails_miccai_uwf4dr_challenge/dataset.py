@@ -3,7 +3,7 @@ from pathlib import Path
 import typer
 from loguru import logger
 from tqdm import tqdm
-from ails_miccai_uwf4dr_challenge.config import PROCESSED_DATA_DIR, RAW_DATA_DIR, EXTERNAL_DATA_DIR
+from ails_miccai_uwf4dr_challenge.config import DATA_DIR, PROCESSED_DATA_DIR, RAW_DATA_DIR, EXTERNAL_DATA_DIR
 from torch.utils.data import Dataset
 import pandas as pd
 import numpy as np
@@ -15,9 +15,10 @@ app = typer.Typer()
 
 
 class OriginalDataset:
-    def __init__(self):
+    def __init__(self, stage_path='1. Training', raw_data_path_suffix='raw'):
+        self.stage_path : str = stage_path    
+        self.raw_data_path = DATA_DIR / raw_data_path_suffix
         self.data = self._merge_all_data_into_global_df()
-        
 
     def get_data(self):
         return self.data
@@ -29,12 +30,12 @@ class OriginalDataset:
 
     def _merge_all_data_into_global_df(self):
 
-        task1_dir = Path(RAW_DATA_DIR / 'Task 1 Image Quality Assessment')
-        task23_dir = Path(RAW_DATA_DIR / 'Task 2 Referable DR and Task 3 DME')
+        task1_dir = Path(self.raw_data_path / 'Task 1 Image Quality Assessment')
+        task23_dir = Path(self.raw_data_path / 'Task 2 Referable DR and Task 3 DME')
 
         # get iterable of image paths for both tasks before combining
-        imgs_task1 = Path(task1_dir / '1. Images' / '1. Training').glob('*.jpg')
-        imgs_task23 = Path(task23_dir / '1. Images' / '1. Training').glob('*.jpg')
+        imgs_task1 = Path(task1_dir / '1. Images' / self.stage_path).glob('*.jpg')
+        imgs_task23 = Path(task23_dir / '1. Images' / self.stage_path).glob('*.jpg')
 
         imgs_task1 = pd.DataFrame(imgs_task1, columns=['image'])
         imgs_task23 = pd.DataFrame(imgs_task23, columns=['image'])
@@ -45,10 +46,10 @@ class OriginalDataset:
         # label file only contains image names and their corresponding labels, but
         # in the label file, ALL images (from both tasks) are listed
         label_dir_task1 = Path(task1_dir / '2. Groundtruths')
-        labels_task1 = pd.read_csv(label_dir_task1 / '1. Training.csv')
+        labels_task1 = pd.read_csv(label_dir_task1 / (self.stage_path+'.csv'))
 
         label_dir_task23 = Path(task23_dir / '2. Groundtruths')
-        labels_task23 = pd.read_csv(label_dir_task23 / '1. Training.csv')
+        labels_task23 = pd.read_csv(label_dir_task23 / (self.stage_path+'.csv'))
 
         # merge labels according to image names
         labels = pd.merge(labels_task1, labels_task23, on='image', how='outer')
@@ -190,6 +191,7 @@ class DatasetOriginationType(enum.Enum):
     ALL = 'all'
     ORIGINAL = 'original'
     DEEPDRID = 'deepdrid'
+    VALIDATION = 'validation'
     
 class ChallengeTaskType(enum.Enum):
     FULL = 'full'
@@ -214,7 +216,9 @@ class DatasetBuilder:
     
     '''
 
-    def __init__(self, dataset: DatasetOriginationType = DatasetOriginationType.ALL, task: ChallengeTaskType = ChallengeTaskType.FULL, split_ratio: float = 0.8, get_mini_dataset=False, frac=0.2):
+    def __init__(self, dataset: DatasetOriginationType = DatasetOriginationType.ALL, 
+                 task: ChallengeTaskType = ChallengeTaskType.FULL, split_ratio: float = 0.8, 
+                 get_mini_dataset=False, frac=0.2, ):
 
 
         ############################################
@@ -224,16 +228,18 @@ class DatasetBuilder:
             self.original = OriginalDataset()
             self.deepdrid = DeepDridDataset()
             self.data = self._concat_datasets([self.original.get_data(), self.deepdrid.get_data()]) 
-
+            
         elif dataset == DatasetOriginationType.ORIGINAL:
             self.data = OriginalDataset().get_data()
-
+            
         elif dataset == DatasetOriginationType.DEEPDRID:
             self.data = DeepDridDataset().get_data()
-
+            
+        elif dataset == DatasetOriginationType.VALIDATION:
+            self.data = OriginalDataset(stage_path='2. Validation', raw_data_path_suffix='validation').get_data()
+            
         else:
-            raise ValueError(f"Invalid dataset name: {dataset}")
-        
+            raise ValueError(f"Invalid dataset name: {dataset}")        
 
         ############################################
         # FILTER FOR TASK
@@ -280,10 +286,13 @@ class DatasetBuilder:
         Split the data into training and validation sets
         '''
         #stratify second column in df
-
-        train_data, val_data = train_test_split(data, test_size=1-split_ratio, random_state=42, stratify=data.iloc[:, 1])
-
-        return train_data, val_data
+        if np.isclose(split_ratio, 1.0):
+            return data, None
+        elif np.isclose(split_ratio, 0.0):
+            return None, data
+        else:
+            train_data, val_data = train_test_split(data, test_size=1-split_ratio, random_state=42, stratify=data.iloc[:, 1])
+            return train_data, val_data
     
     def get_train_val(self):
         '''

@@ -20,19 +20,19 @@ from tools.submission_evaluation.confidence_visualizer import ConfidenceVisualiz
 from tools.submission_evaluation.inference_result import InferenceResult
 
 class ModelEvaluator:
-    def __init__(self, task, model, model_path, dataset_builder):
+    def __init__(self, task, model, model_path, val_data):
         """
         Initialize the evaluator with the model and dataset builder.
 
         :param task: current task
         :param model: Model to be evaluated.
         :param model_path: Path to the directory where the model is stored.
-        :param dataset_builder: DatasetBuilder object to build the dataset.
+        :param val_data: validation data to evaluate the model.
         """
         self.task = task
         self.model = model
         self.model_path = model_path
-        self.dataset_builder = dataset_builder
+        self.val_data = val_data
 
     def load_model(self):
         """
@@ -86,16 +86,9 @@ class ModelEvaluator:
         """
         # Load model
         self.load_model()
-    
-        # Get the validation dataset
-        train_data, val_data = self.dataset_builder.get_train_val()
-        
-        print(f"Loaded model from {self.model_path}")
-        print(f"Validation data: {len(val_data)} samples - will be evaluated")
-        print(f"Training data: {len(train_data)} samples - will not be evaluated")
         
         # Create a DataLoader for the validation dataset
-        val_dataset = CustomDataset(val_data, transform=None, load_like_challenge_analyzers=True)
+        val_dataset = CustomDataset(self.val_data, transform=None, load_like_challenge_analyzers=True)
         val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=1, shuffle=False)
 
         results: List[InferenceResult] = []  # Initialize list of InferenceResults
@@ -114,32 +107,27 @@ class ModelEvaluator:
                 output = self.model.predict(image.numpy())  # Get model prediction for the single image
                 end_time = time.time()
 
-            # Calculate the inference time for this sample
             inference_time = end_time - start_time
 
-            # Determine the predicted label and create an InferenceResult object
             predicted_label = 1 if output > 0.5 else 0
+                    
             results.append(InferenceResult(output, image_path, image_dims, labels.item(), predicted_label, inference_time, None))
             self.save_results(results, save_path)
 
         self.save_results(results, save_path)
 
-        # Initialize Grad-CAM extractor
         cam_extractor = GradCAM(self.model.model, self.find_last_conv_layer(self.model.model)) 
 
         # Second loop: Grad-CAM computation with gradients enabled
         for i, (images, labels, image_paths) in enumerate(tqdm(val_loader, desc="Evaluating - Grad-CAM")):
-            # Extract the single image from the batch and move to device
             image = images[0].to(self.model.device)  # Remove batch dimension
 
             # Re-compute prediction with gradients enabled
             output_with_grads = self.model.predict(image.numpy(), with_grads=True)
 
-            # Compute Grad-CAM
-            activation_map = cam_extractor(0, output_with_grads)  # Use target class 0 for the single output
+            activation_map = cam_extractor(0, output_with_grads)
             grayscale_cam = activation_map[0].cpu().numpy()
 
-            # Update the previously stored result with Grad-CAM information
             results[i].activation_map = grayscale_cam
             self.save_results(results, save_path)
         
@@ -153,9 +141,8 @@ class ModelEvaluator:
         """
         # Visualization and metrics calculation
         visualizer = ConfidenceVisualizer(display_original=True, display_grad_cam=False, display_combined=True)
-        sorted_results = visualizer.sort_by_confidence(results)
-        visualizer.concat_and_display_image(self.task, sorted_results, labels=[0])
-        visualizer.concat_and_display_image(self.task, sorted_results, labels=[1])
+        visualizer.concat_and_display_image(self.task, results, labels=[0])
+        visualizer.concat_and_display_image(self.task, results, labels=[1])
 
         # Calculate average inference time
         avg_inference_time = sum(result.inference_time for result in results) / len(results)
@@ -171,14 +158,6 @@ class ModelEvaluator:
         # Compute confusion matrix
         cm = confusion_matrix([r.true_label for r in results], [r.predicted_label for r in results])
         print(f"Confusion Matrix:\n{cm}")
-
-        # Plot confusion matrix
-        plt.figure(figsize=(6, 6))
-        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=["Negative", "Positive"], yticklabels=["Negative", "Positive"])
-        plt.xlabel("Predicted")
-        plt.ylabel("True")
-        plt.title("Confusion Matrix")
-        plt.show()
 
 if __name__ == "__main__":
     
@@ -211,16 +190,24 @@ if __name__ == "__main__":
             raise ValueError("Unknown task_strategy : "+task_strategy)
         
         # Build the dataset
+        origination = DatasetOriginationType.VALIDATION
+        
         dataset_builder = DatasetBuilder(
-            dataset=DatasetOriginationType.ORIGINAL,  # Use the enum value
+            dataset=origination,
             task=task,
-            split_ratio=0.8
+            split_ratio=0.0,
         )
+        
+        # Get the validation dataset
+        train_data, val_data = dataset_builder.get_train_val()
+        
+        print(f"Validation data: {len(val_data)} samples - will be evaluated")
+        print(f"Training data: {len(train_data) if train_data is not None else 0} samples - will not be evaluated")
 
         # Initialize the evaluator with the model and dataset
-        evaluator = ModelEvaluator(task, model, model_path, dataset_builder)
+        evaluator = ModelEvaluator(task, model, model_path, val_data)
         
-        results_file_name = f"tools/submission_evaluation/results_{task.value}.json"
+        results_file_name = f"tools/submission_evaluation/results_{origination.name}_{task.value}.json"
 
         if os.path.exists(results_file_name):
             results: List[InferenceResult] = evaluator.load_results(results_file_name)

@@ -5,9 +5,9 @@ import numpy as np
 from typing import List
 
 from tools.submission_evaluation.inference_result import InferenceResult
-
+from tools.submission_evaluation.inference_result_selector import InferenceResultSelector
 class ConfidenceVisualizer:
-    def __init__(self, image_size=(500, 500), images_per_row=5, best_images = 5, worst_images = 10, display_combined=True, display_grad_cam=False, display_original=False, display_activation_map_as_text=False):
+    def __init__(self, image_size=(500, 500), images_per_row=5, best_images=5, worst_images=5, display_combined=True, display_grad_cam=False, display_original=False, display_activation_map_as_text=False):
         """
         Initialize the ConfidenceVisualizer with desired image size and number of images per row.
 
@@ -19,7 +19,7 @@ class ConfidenceVisualizer:
         self.image_size = image_size
         self.image_width = int(image_size[0])
         self.image_height = int(image_size[1])
-        self.bar_height = int(self.image_height/10)
+        self.bar_height = int(self.image_height / 10)
         self.images_per_row = images_per_row
         self.best_images = best_images
         self.worst_images = worst_images
@@ -27,15 +27,6 @@ class ConfidenceVisualizer:
         self.display_grad_cam = display_grad_cam
         self.display_original = display_original
         self.display_activation_map_as_text = display_activation_map_as_text
-
-    def sort_by_confidence(self, results):
-        """
-        Sort images by classification confidence.
-
-        :param results: List of InferenceResult objects.
-        :return: Sorted list of InferenceResult objects.
-        """
-        return sorted(results, key=lambda x: x.confidence, reverse=True)  # Sort by confidence
 
     def get_confidence_color(self, confidence, max_confidence=1.0):
         """
@@ -46,10 +37,10 @@ class ConfidenceVisualizer:
         :return: A tuple representing the RGB color.
         """
         normalized_confidence = confidence / max_confidence
-        red = int(normalized_confidence * 255)
-        green = int((1 - normalized_confidence) * 255)
-        return (red, green, 0)  # RGB color
-    
+        red = int((1 - normalized_confidence) * 255)
+        green = int(normalized_confidence * 255)
+        return (red, green, 0)
+
     def create_bar(self, confidence, bar_text):
         # Create a bar to represent confidence
         bar_color = self.get_confidence_color(confidence)
@@ -60,7 +51,7 @@ class ConfidenceVisualizer:
         font = self.get_available_font(int(self.bar_height * 0.8))
         text_width, text_height = draw.textbbox((0, 0), bar_text, font=font)[2:4]
         draw.text(((self.image_width - text_width) / 2, (self.bar_height - text_height) / 2), bar_text, fill="white", font=font)
-        
+
         return bar
 
     def apply_blue_to_red_colormap(self, activation_map):
@@ -72,26 +63,26 @@ class ConfidenceVisualizer:
 
         # Convert to RGB format and scale to [0, 255]
         colored_map = (colored_map[:, :, :3] * 255).astype(np.uint8)
-        
+
         return colored_map
-    
+
     def get_available_font(self, font_size):
         """
-        Returns the first available font path on the system with the specified size.
+        Returns the default font with the specified size.
         """
         return ImageFont.load_default(font_size)
-    
+
     def add_value_overlay(self, image, activation_map):
         """
         Draws a grid of rounded values (0-9) on top of the image.
-        
+
         :param image: The PIL image to draw on.
         :param activation_map: The original activation map.
         :return: PIL Image with overlaid text.
         """
         # Round the activation map values to the nearest 0.1 and scale to integers 0-9
         rounded_values = np.round(activation_map / np.max(activation_map) * 9).astype(int)
-        
+
         # Create a drawing context
         draw = ImageDraw.Draw(image)
 
@@ -115,7 +106,7 @@ class ConfidenceVisualizer:
 
         return image
 
-    def create_concatenated_image(self, results, labels=None):
+    def create_concatenated_image(self, results: List[InferenceResult], labels=None):
         """
         Create a large image displaying images sorted by classification performance, optionally filtered by labels.
 
@@ -126,35 +117,20 @@ class ConfidenceVisualizer:
         if labels is not None:
             results = [result for result in results if result.true_label in labels]
 
-        sorted_results = self.sort_by_confidence(results)
-        
-        mid = len(sorted_results) // 2
+        selector = InferenceResultSelector(best_images=self.best_images, worst_images=self.worst_images)
+        sorted_results = selector.select_best_and_worst(results)
 
-        sorted_results_filtered : List[InferenceResult] = []
-        
-        if self.worst_images > 0:
-            sorted_results_filtered += sorted_results[:self.worst_images]
-        elif self.worst_images < 0:
-            sorted_results_filtered += sorted_results[:mid]
-        
-        if self.best_images > 0:
-            sorted_results_filtered += sorted_results[-self.best_images:]
-        elif self.worst_images < 0:
-            sorted_results_filtered  += sorted_results[-mid:]
-        
-        sorted_results = sorted_results_filtered
-        
         num_images = len(sorted_results)
-        
+
         if num_images == 0:
             raise ValueError("No images found for the specified params.")
-        
+
         rows = (num_images // self.images_per_row)
-        bar_height = int(self.image_height/10)
-        
+        bar_height = int(self.image_height / 10)
+
         how_many_images_per_row = (1 if self.display_combined else 0) + (1 if self.display_grad_cam else 0) + (1 if self.display_original else 0)
         row_height = self.image_height * how_many_images_per_row + bar_height
-        
+
         canvas = Image.new('RGB', (self.image_width * self.images_per_row, row_height * rows))
 
         for idx, result in enumerate(sorted_results):
@@ -171,10 +147,10 @@ class ConfidenceVisualizer:
             assert activation_map.ndim == 2, f"Activation map must be 2D, but got shape {activation_map.shape}."
 
             # Normalize the activation map to the range [0, 1]
-            activation_map = activation_map / np.max(activation_map)
+            activation_map = activation_map / np.max(activation_map) if np.max(activation_map) != 0 else activation_map
 
             heatmap = self.apply_blue_to_red_colormap(activation_map)
- 
+
             heatmap_pil = Image.fromarray(heatmap)
             heatmap_pil = heatmap_pil.resize(self.image_size)
 
@@ -183,9 +159,9 @@ class ConfidenceVisualizer:
 
             # Combine original image and heatmap
             combined_img = Image.blend(pil_img, heatmap_pil, alpha=0.5)
-            
+
             bar = self.create_bar(result.confidence, f'Pred: {result.output:.2f}, True: {result.true_label:.0f}')
-            
+
             # Create an image with the picture and the bar below it
             img_with_bar = Image.new('RGB', (self.image_width, row_height))
             current_height = 0
@@ -198,7 +174,7 @@ class ConfidenceVisualizer:
             if self.display_original:
                 img_with_bar.paste(pil_img, (0, current_height))
                 current_height += self.image_height
-            img_with_bar.paste(bar, (0, row_height-bar_height))            
+            img_with_bar.paste(bar, (0, row_height - bar_height))
 
             # Paste the combined image onto the canvas
             x_offset = (idx % self.images_per_row) * self.image_width

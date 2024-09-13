@@ -27,7 +27,7 @@ class InferenceResult:
         :param activation_map: The Grad-CAM activation map.
         """
         # Assertions for type checking
-        assert isinstance(output, float), "Output should be a float."
+        assert isinstance(output, float), "Output should be a float, is of type : " + str(type(output))
         assert isinstance(image_path, str), "Image path should be a string."
         assert isinstance(image_dims, tuple) and len(image_dims) == 2, "Image dims should be a tuple of two integers."
         assert isinstance(true_label, float), "True label should be a float."
@@ -52,7 +52,7 @@ class InferenceResult:
         Dynamically calculate the confidence score as the absolute difference 
         between the output and the true label.
         """
-        return abs(self.output - self.true_label)
+        return 1-abs(self.output - self.true_label)
 
     @classmethod
     def from_dict(cls, data: dict):
@@ -108,5 +108,3 @@ class InferenceResult:
             }
         except Exception as e:
             raise ValueError(f"Error in converting InferenceResult to dict: {e}")
-
-    # Implement other class methods and attributes as needed...
