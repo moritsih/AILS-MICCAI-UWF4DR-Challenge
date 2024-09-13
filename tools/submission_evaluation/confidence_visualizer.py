@@ -132,15 +132,15 @@ class ConfidenceVisualizer:
 
         sorted_results_filtered : List[InferenceResult] = []
         
-        if self.best_images > 0:
-            sorted_results_filtered += sorted_results[-self.best_images:]
-        elif self.worst_images < 0:
-            sorted_results_filtered  += sorted_results[-mid:]
-            
         if self.worst_images > 0:
             sorted_results_filtered += sorted_results[:self.worst_images]
         elif self.worst_images < 0:
             sorted_results_filtered += sorted_results[:mid]
+        
+        if self.best_images > 0:
+            sorted_results_filtered += sorted_results[-self.best_images:]
+        elif self.worst_images < 0:
+            sorted_results_filtered  += sorted_results[-mid:]
         
         sorted_results = sorted_results_filtered
         
